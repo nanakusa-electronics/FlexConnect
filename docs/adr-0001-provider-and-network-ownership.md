@@ -18,7 +18,9 @@ Passkey keystores enter through local IPC and are kept by the daemon's secret
 store. Large payloads are encrypted in private files using a key protected by
 the configured secret store. The source file remains the user's responsibility;
 concurrent use can corrupt the authenticator counter. Gateway public-key pins
-are scoped to the profile and endpoint, and a changed pin terminates connection.
+and the aTrust device identity are scoped to the stable profile ID, so rotating
+the credential does not silently reset first-use trust or device registration.
+A changed gateway pin terminates connection.
 
 The GeekTrust module is developed locally in a Go workspace. Release builds
 must pin a published GeekTrust version and remove the workspace dependency.

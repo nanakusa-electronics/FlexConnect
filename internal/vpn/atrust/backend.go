@@ -100,7 +100,7 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 	if req.Profile.SecretRef == "" {
 		return nil, errors.New("aTrust profile has no imported credential")
 	}
-	id, err := b.deviceID(req.Profile.SecretRef)
+	id, err := b.deviceID("profile/" + req.Profile.ID)
 	if err != nil {
 		return nil, fmt.Errorf("load aTrust device identity: %w", err)
 	}
@@ -109,7 +109,7 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 		DeviceID:              id,
 		LoginDomain:           req.Profile.LoginDomain,
 		DisableSystemResolver: true,
-		GatewayTrustStore:     &gatewayPinStore{secrets: b.secrets, ref: req.Profile.SecretRef},
+		GatewayTrustStore:     &gatewayPinStore{secrets: b.secrets, ref: "profile/" + req.Profile.ID},
 		Authenticator:         &geektrust.PasskeyAuthenticator{Store: blobStore{b.secrets, req.Profile.SecretRef}},
 		SessionStore:          blobStore{b.secrets, req.Profile.SecretRef + "/session"},
 	})
