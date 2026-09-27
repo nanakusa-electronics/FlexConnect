@@ -509,6 +509,32 @@ func readSecretInput(path string, fromStdin bool, in io.Reader) (string, bool, e
 	return secret, true, nil
 }
 
+func readKeystore(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open keystore: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("inspect keystore: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("keystore must be a regular file")
+	}
+	if err := validateSecretFile(info); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil {
+		return nil, fmt.Errorf("read keystore: %w", err)
+	}
+	if len(data) == 0 || len(data) > 1<<20 {
+		return nil, errors.New("keystore size is invalid")
+	}
+	return data, nil
+}
+
 func promptLoginRequest(ctx context.Context, in io.Reader, out io.Writer) (types.LoginRequest, error) {
 	reader := bufio.NewReader(in)
 
@@ -905,6 +931,10 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		unsafePassword := fs.String("password", "", "unsupported plaintext password")
 		passwordFile := fs.String("password-file", "", "read password from a file")
 		passwordStdin := fs.Bool("password-stdin", false, "read password from standard input")
+		provider := fs.String("provider", string(types.ProviderAnyConnect), "VPN provider: anyconnect or atrust")
+		authMethod := fs.String("auth-method", "", "authentication method")
+		loginDomain := fs.String("login-domain", "", "aTrust login domain")
+		keystore := fs.String("keystore", "", "import passkey keystore from a file")
 		scope := fs.String("scope", string(types.ProfileScopeUser), "profile scope: user or machine")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -914,7 +944,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		}
 		positionals := fs.Args()
 		if len(positionals) < 2 || len(positionals) > 3 {
-			return fmt.Errorf("usage: profile add [--scope user|machine] [--password-file <path> | --password-stdin] <name> <server_url> [username]")
+			return fmt.Errorf("usage: profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]")
 		}
 		profile, err := types.NewProfile(positionals[0])
 		if err != nil {
@@ -925,6 +955,13 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 			return errors.New("--scope must be user or machine")
 		}
 		profile.ServerURL = positionals[1]
+		profile.Provider = types.Provider(*provider)
+		if *authMethod != "" {
+			profile.AuthMethod = types.AuthMethod(*authMethod)
+		} else if profile.Provider == types.ProviderATrust {
+			profile.AuthMethod = types.AuthECNUPasskey
+		}
+		profile.LoginDomain = *loginDomain
 		if len(positionals) > 2 {
 			profile.Username = positionals[2]
 		}
@@ -932,10 +969,23 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		if err != nil {
 			return err
 		}
+		var credential []byte
+		if *keystore != "" {
+			if password != "" {
+				return errors.New("--keystore cannot be combined with a password")
+			}
+			credential, err = readKeystore(*keystore)
+			if err != nil {
+				return err
+			}
+		}
 		debugf("profile add name=%q username=%q", profile.Name, profile.Username)
-		created, err := client.CreateProfile(ctx, profile, password)
+		created, err := client.CreateProfileWithCredential(ctx, profile, password, credential)
 		if err != nil {
 			return err
+		}
+		if len(credential) != 0 {
+			_, _ = fmt.Fprintln(cliErr, "Credential imported. Do not use the source keystore concurrently with FlexConnect; it was not deleted.")
 		}
 		debugf("profile add created id=%q", created.ID)
 		return printJSON(created)
@@ -952,7 +1002,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 			return printNamedHelp("profile update")
 		}
 		if len(args) < 1 {
-			return fmt.Errorf("usage: profile update -p <profile-name> [--name ..] [--server ..] [--user ..] [--group ..] [--password-file <path> | --password-stdin] [--dns a,b] [--mtu 1399] [--accept true|false] [--auto-reconnect true|false] [--apply-dns true|false] [--include a,b] [--exclude c,d] [--socks5 true|false] [--socks5-listen 127.0.0.1:1080]")
+			return fmt.Errorf("usage: profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]")
 		}
 		fs := flag.NewFlagSet("profile update", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -961,6 +1011,10 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		serverURL := fs.String("server", "", "new server URL")
 		user := fs.String("user", "", "new username")
 		group := fs.String("group", "", "new VPN group")
+		provider := fs.String("provider", "", "new VPN provider")
+		authMethod := fs.String("auth-method", "", "new authentication method")
+		loginDomain := fs.String("login-domain", "", "new aTrust login domain")
+		keystore := fs.String("keystore", "", "import replacement passkey keystore")
 		unsafePassword := fs.String("password", "", "unsupported plaintext password")
 		passwordFile := fs.String("password-file", "", "read new password from a file")
 		passwordStdin := fs.Bool("password-stdin", false, "read new password from standard input")
@@ -980,7 +1034,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 			return err
 		}
 		if len(fs.Args()) != 0 {
-			return fmt.Errorf("usage: profile update -p <profile-name> [--name ..] [--server ..] [--user ..] [--group ..] [--password-file <path> | --password-stdin] [--dns a,b] [--mtu 1399] [--accept true|false] [--auto-reconnect true|false] [--apply-dns true|false] [--include a,b] [--exclude c,d] [--socks5 true|false] [--socks5-listen 127.0.0.1:1080]")
+			return fmt.Errorf("usage: profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]")
 		}
 		if *unsafePassword != "" {
 			return errors.New("--password is not supported; use --password-file or --password-stdin")
@@ -1012,12 +1066,32 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		if *group != "" {
 			req.Group = group
 		}
+		if *provider != "" {
+			value := types.Provider(*provider)
+			req.Provider = &value
+		}
+		if *authMethod != "" {
+			value := types.AuthMethod(*authMethod)
+			req.AuthMethod = &value
+		}
+		if *loginDomain != "" {
+			req.LoginDomain = loginDomain
+		}
 		password, passwordProvided, err := readSecretInput(*passwordFile, *passwordStdin, cliIn)
 		if err != nil {
 			return err
 		}
 		if passwordProvided {
 			req.Password = &password
+		}
+		if *keystore != "" {
+			if passwordProvided {
+				return errors.New("--keystore cannot be combined with a password")
+			}
+			req.Credential, err = readKeystore(*keystore)
+			if err != nil {
+				return err
+			}
 		}
 		if *dns != "" {
 			req.DNSOverrides = splitCSV(*dns)
@@ -1069,6 +1143,9 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		result, err := client.UpdateProfile(ctx, targetID, req)
 		if err != nil {
 			return err
+		}
+		if len(req.Credential) != 0 {
+			_, _ = fmt.Fprintln(cliErr, "Credential imported. Do not use the source keystore concurrently with FlexConnect; it was not deleted.")
 		}
 		return printProfileMutation(result)
 	case "switch":
@@ -1532,7 +1609,7 @@ func rootHelpTopic() helpTopic {
 		Summary: "CLI for the FlexConnect daemon",
 		Usage:   "flexconnect [--socket <path>] [--timeout <duration>] [--connect-timeout <duration>] [-v|--verbose] <command> [command flags]",
 		Description: "FlexConnect controls the local FlexConnect daemon, manages VPN profiles,\n" +
-			"starts AnyConnect sessions, and exposes local tools like diagnostics and VPN-only SOCKS5 proxying.",
+			"starts AnyConnect or aTrust sessions, and exposes local tools like diagnostics and VPN-only SOCKS5 proxying.",
 		Subcommands: []helpTopic{
 			{Name: "status", Summary: "Show current daemon and VPN status"},
 			{Name: "login", Summary: "Create a profile and log in"},
@@ -1652,7 +1729,7 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 		},
 		"profile add": {
 			Name:        "profile add",
-			Usage:       "flexconnect profile add [--scope user|machine] [--password-file <path> | --password-stdin] <name> <server_url> [username]",
+			Usage:       "flexconnect profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]",
 			Description: "Create a user profile by default. Elevated administrators may create machine profiles with --scope machine.",
 		},
 		"profile switch": {
@@ -1667,7 +1744,7 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 		},
 		"profile update": {
 			Name:  "profile update",
-			Usage: "flexconnect profile update -p <profile-name> [--name ..] [--server ..] [--user ..] [--group ..] [--password-file <path> | --password-stdin] [--dns a,b] [--mtu 1399] [--accept true|false] [--auto-reconnect true|false] [--apply-dns true|false] [--include a,b] [--exclude c,d] [--socks5 true|false] [--socks5-listen 127.0.0.1:1080]",
+			Usage: "flexconnect profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]",
 			Description: "Update profile fields in place. Runtime-relevant changes reconnect an active profile automatically.\n" +
 				"Use `socks5=true` to enable the built-in VPN-only SOCKS5 proxy for that profile.",
 		},

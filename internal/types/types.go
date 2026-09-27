@@ -10,6 +10,16 @@ import (
 type State string
 
 type ProfileScope string
+type Provider string
+type AuthMethod string
+
+const (
+	ProviderAnyConnect      Provider   = "anyconnect"
+	ProviderATrust          Provider   = "atrust"
+	AuthPassword            AuthMethod = "password"
+	AuthECNUPasskey         AuthMethod = "ecnu_passkey"
+	AuthShanghaiTechPasskey AuthMethod = "shanghaitech_passkey"
+)
 
 const (
 	ProfileScopeUser    ProfileScope = "user"
@@ -34,6 +44,9 @@ type RouteSpec struct {
 
 type Profile struct {
 	ID                 string       `json:"id"`
+	Provider           Provider     `json:"provider"`
+	AuthMethod         AuthMethod   `json:"auth_method"`
+	LoginDomain        string       `json:"login_domain,omitempty"`
 	Name               string       `json:"name"`
 	ServerURL          string       `json:"server_url"`
 	Username           string       `json:"username"`
@@ -55,6 +68,10 @@ type Profile struct {
 }
 
 type ProfileCreateRequest struct {
+	Provider           Provider     `json:"provider"`
+	AuthMethod         AuthMethod   `json:"auth_method"`
+	LoginDomain        string       `json:"login_domain,omitempty"`
+	Credential         []byte       `json:"credential,omitempty"`
 	Name               string       `json:"name"`
 	ServerURL          string       `json:"server_url"`
 	Username           string       `json:"username"`
@@ -73,20 +90,24 @@ type ProfileCreateRequest struct {
 }
 
 type ProfileUpdateRequest struct {
-	Name               *string  `json:"name,omitempty"`
-	ServerURL          *string  `json:"server_url,omitempty"`
-	Username           *string  `json:"username,omitempty"`
-	Group              *string  `json:"group,omitempty"`
-	AcceptServerRoutes *bool    `json:"accept_server_routes,omitempty"`
-	AutoReconnect      *bool    `json:"auto_reconnect,omitempty"`
-	ApplyDNS           *bool    `json:"apply_dns,omitempty"`
-	CustomInclude      []string `json:"custom_include_routes,omitempty"`
-	CustomExclude      []string `json:"custom_exclude_routes,omitempty"`
-	DNSOverrides       []string `json:"dns_overrides,omitempty"`
-	SOCKS5Enabled      *bool    `json:"socks5_enabled,omitempty"`
-	SOCKS5Listen       *string  `json:"socks5_listen,omitempty"`
-	MTU                *int     `json:"mtu,omitempty"`
-	Password           *string  `json:"password,omitempty"`
+	Provider           *Provider   `json:"provider,omitempty"`
+	AuthMethod         *AuthMethod `json:"auth_method,omitempty"`
+	LoginDomain        *string     `json:"login_domain,omitempty"`
+	Credential         []byte      `json:"credential,omitempty"`
+	Name               *string     `json:"name,omitempty"`
+	ServerURL          *string     `json:"server_url,omitempty"`
+	Username           *string     `json:"username,omitempty"`
+	Group              *string     `json:"group,omitempty"`
+	AcceptServerRoutes *bool       `json:"accept_server_routes,omitempty"`
+	AutoReconnect      *bool       `json:"auto_reconnect,omitempty"`
+	ApplyDNS           *bool       `json:"apply_dns,omitempty"`
+	CustomInclude      []string    `json:"custom_include_routes,omitempty"`
+	CustomExclude      []string    `json:"custom_exclude_routes,omitempty"`
+	DNSOverrides       []string    `json:"dns_overrides,omitempty"`
+	SOCKS5Enabled      *bool       `json:"socks5_enabled,omitempty"`
+	SOCKS5Listen       *string     `json:"socks5_listen,omitempty"`
+	MTU                *int        `json:"mtu,omitempty"`
+	Password           *string     `json:"password,omitempty"`
 }
 
 type SessionInfo struct {
@@ -102,8 +123,8 @@ type SessionInfo struct {
 	MTU           int           `json:"mtu"`
 	SplitInclude  []string      `json:"split_include"`
 	SplitExclude  []string      `json:"split_exclude"`
-	TLSCipher     string        `json:"tls_cipher"`
-	DTLSCipher    string        `json:"dtls_cipher"`
+	TLSCipher     string        `json:"tls_cipher,omitempty"`
+	DTLSCipher    string        `json:"dtls_cipher,omitempty"`
 	Underlay      *UnderlayInfo `json:"underlay,omitempty"`
 }
 
@@ -260,7 +281,7 @@ type OperationRef struct {
 	Operation Operation `json:"operation"`
 }
 
-// ProfileMutationResult represents the two valid PATCH /v2/profiles outcomes:
+// ProfileMutationResult represents the two valid PATCH /v3/profiles outcomes:
 // a completed static update or an asynchronous active-profile transaction.
 type ProfileMutationResult struct {
 	Profile   *Profile
@@ -370,6 +391,8 @@ func NewProfile(name string) (Profile, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	return Profile{
 		ID:                 id,
+		Provider:           ProviderAnyConnect,
+		AuthMethod:         AuthPassword,
 		Name:               name,
 		Scope:              ProfileScopeMachine,
 		OwnerID:            "system",

@@ -1,6 +1,6 @@
 # FlexConnect
 
-FlexConnect 是一个跨平台可配置的 AnyConnect VPN 客户端，提供守护进程、桌面托盘和命令行接口，支持 Windows、Linux 和 macOS。
+FlexConnect 2.0 是一个可选择 AnyConnect 或 aTrust 的 VPN 客户端，提供守护进程、桌面托盘和命令行接口，面向 Windows、Linux 和 macOS。
 
 ## 组件
 
@@ -9,6 +9,7 @@ FlexConnect 是一个跨平台可配置的 AnyConnect VPN 客户端，提供守�
 - `flexconnect`：命令行客户端，适合脚本和日常运维
 - `client/local`：类型化本地 API 客户端
 - `internal/vpn/anyconnect`：内建 AnyConnect 后端
+- `internal/vpn/atrust`：通过 GeekTrust 库连接 aTrust，由 FlexConnect 管理系统 TUN、路由和 DNS
 
 ## 能力
 
@@ -45,6 +46,10 @@ flexconnect profile list
 3. 创建或选择一个 Profile
 4. 输入服务器、用户名和密码并连接
 
+aTrust 使用已注册的 Passkey keystore。先启动守护进程，再用
+`profile add --provider atrust --auth-method ecnu_passkey --keystore <file>`
+导入凭据。导入后请勿让其他程序并发使用源 keystore；源文件不会被自动删除。
+
 连接成功后，CLI 与托盘会显示当前状态、VPN 地址、DNS 和路由摘要。
 
 ## 命令示例
@@ -59,6 +64,8 @@ flexconnect proxy status
 flexconnect proxy enable 127.0.0.1:1080
 flexconnect proxy disable
 flexconnect profile add --scope machine --password-file ./secrets/flexconnect_password unattended https://vpn.example.com machine-user
+flexconnect profile add --provider atrust --auth-method ecnu_passkey --keystore ./ecnu.keystore campus https://vpn.ecnu.edu.cn
+flexconnect up -p campus
 flexconnect control-mode machine -p unattended
 flexconnect control-mode user
 flexconnect logs
@@ -122,7 +129,7 @@ printf '%s\n' '<password>' > secrets/flexconnect_password
 FLEXCONNECT_SERVER=https://vpn.example.com FLEXCONNECT_USERNAME=alice docker compose -f docker-compose.example.yml up --build
 ```
 
-缺少必填环境变量、密码文件不可读或 machine Profile 持久化失败会直接非零退出。连接失败会保留 machine 锁并通过 `/v2/ready`、status、diagnostics 和 watch 暴露；只有明确分类为瞬态的错误才执行最多 3 次重连。管理员必须显式退出 machine 模式才能解除锁定。
+缺少必填环境变量、密码文件不可读或 machine Profile 持久化失败会直接非零退出。连接失败会保留 machine 锁并通过 `/v3/ready`、status、diagnostics 和 watch 暴露；只有明确分类为瞬态的错误才执行最多 3 次重连。管理员必须显式退出 machine 模式才能解除锁定。
 
 管理员手动管理 unattended 模式时，先用 `profile add --scope machine` 创建 machine Profile，
 再执行 `control-mode machine`。`control-mode` 会返回异步 operation；终态通过 watch 发布并在
@@ -218,43 +225,4 @@ sudo usermod -aG flexconnect "$USER"
 
 ```bash
 go run ./cmd/dist list
-go run ./cmd/dist build --version 1.3.4 linux/amd64/tgz
-go run ./cmd/dist build --version 1.3.4 linux/amd64/deb
-go run ./cmd/dist build --version 1.3.4 linux/amd64/rpm
-go run ./cmd/dist build --version 1.3.4 windows/amd64/zip
-go run ./cmd/dist build --version 1.3.4 windows/amd64/msi
-go run ./cmd/dist build --version 1.3.4 darwin/amd64/pkg
-go run ./cmd/dist build --version 1.3.4 darwin/arm64/pkg
-```
-
-推送形如 `v1.3.4` 的 Git tag 后，GitHub Actions 会自动构建这些产物并创建对应的 GitHub Release。
-
-## 运行与配置
-
-- `--socket` 用于指定本地 IPC 端点
-- `--timeout` 设置 daemon 健康检查和普通 CLI 操作超时，默认 `15s`
-- `--connect-timeout` 设置登录和 VPN 建链超时，默认 `2m`
-- `--state` 用于指定状态文件
-- `-v` 或 `--verbose` 启用更详细日志
-- Windows 上直接启动 `flexconnectd` 时会自动请求管理员权限
-- 密码通过系统密钥库保存，状态文件只保存非敏感元数据
-- CLI 在执行 daemon 命令前通过 `/v2/live` 和 `/v2/ready` 校验 API major、capabilities 与组件 readiness
-- Linux 本地控制接口通过 `0660 root:flexconnect` Unix socket 提供；Windows 使用受保护的 named pipe，不暴露公网 TCP 端口
-
-## 项目结构
-
-- `assets/`：图标和 Windows 运行时资源
-- `client/`：面向用户的客户端代码
-- `cmd/`：可执行程序入口
-- `docs/`：项目说明文档
-- `internal/`：守护进程、API、路由、IPC、存储、日志和 AnyConnect 实现
-- `release/`：Debian 和 RPM 生命周期脚本
-- `scripts/`：构建、打包、安装和运行脚本
-
-## Credits
-* [Tailscale](https://tailscale.com/) - 架构参考与实现参考
-* [sslcon](https://github.com/tlslink/sslcon) - AnyConnect 协议实现参考
-
-## 验证边界
-
-版本 1.3.4 的发布门禁覆盖 Windows、Linux 和 macOS 自动测试、race/vet/build、安装包构建和 Docker 构建。这些结果不代表真实 AnyConnect 服务器、真实主机网络变更或独立安全扫描已经验收。
+2.0.0 的三平台原生 CI、安装包和容器验证仍需在固定 GeekTrust 远程版本后完成。实际 VPN/TUN 连接验证须按运行平台分别记录。

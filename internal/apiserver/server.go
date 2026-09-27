@@ -101,19 +101,19 @@ func allowedBrowserSource(value string) bool {
 }
 
 func (s *Server) routes() {
-	s.mux.HandleFunc("/v2/live", s.handleLive)
-	s.mux.HandleFunc("/v2/ready", s.handleReady)
-	s.mux.HandleFunc("/v2/status", s.handleStatus)
-	s.mux.HandleFunc("/v2/profiles", s.handleProfiles)
-	s.mux.HandleFunc("/v2/profiles/", s.handleProfile)
-	s.mux.HandleFunc("/v2/connection", s.handleConnection)
-	s.mux.HandleFunc("/v2/control-mode", s.handleControlMode)
-	s.mux.HandleFunc("/v2/operations/", s.handleOperation)
-	s.mux.HandleFunc("/v2/watch", s.handleWatch)
-	s.mux.HandleFunc("/v2/logs", s.handleLogs)
-	s.mux.HandleFunc("/v2/traffic", s.handleTraffic)
-	s.mux.HandleFunc("/v2/diagnostics", s.handleDiagnostics)
-	s.mux.HandleFunc("/v2/update/check", s.handleUpdateCheck)
+	s.mux.HandleFunc("/v3/live", s.handleLive)
+	s.mux.HandleFunc("/v3/ready", s.handleReady)
+	s.mux.HandleFunc("/v3/status", s.handleStatus)
+	s.mux.HandleFunc("/v3/profiles", s.handleProfiles)
+	s.mux.HandleFunc("/v3/profiles/", s.handleProfile)
+	s.mux.HandleFunc("/v3/connection", s.handleConnection)
+	s.mux.HandleFunc("/v3/control-mode", s.handleControlMode)
+	s.mux.HandleFunc("/v3/operations/", s.handleOperation)
+	s.mux.HandleFunc("/v3/watch", s.handleWatch)
+	s.mux.HandleFunc("/v3/logs", s.handleLogs)
+	s.mux.HandleFunc("/v3/traffic", s.handleTraffic)
+	s.mux.HandleFunc("/v3/diagnostics", s.handleDiagnostics)
+	s.mux.HandleFunc("/v3/update/check", s.handleUpdateCheck)
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusNotFound, "endpoint_not_found", "Local API endpoint not found", false)
 	})
@@ -222,7 +222,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		s.handleError(w, r, err)
 		return
 	}
-	id, err := pathID(r.URL.EscapedPath(), "/v2/profiles/")
+	id, err := pathID(r.URL.EscapedPath(), "/v3/profiles/")
 	if err != nil {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_profile_id", err.Error(), false)
 		return
@@ -347,7 +347,7 @@ func (s *Server) handleOperation(w http.ResponseWriter, r *http.Request) {
 		s.handleError(w, r, err)
 		return
 	}
-	id, err := pathID(r.URL.EscapedPath(), "/v2/operations/")
+	id, err := pathID(r.URL.EscapedPath(), "/v3/operations/")
 	if err != nil {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_operation_id", err.Error(), false)
 		return

@@ -19,9 +19,14 @@ import (
 	"flexconnect/internal/logging"
 	"flexconnect/internal/osnet"
 	"flexconnect/internal/router"
+	"flexconnect/internal/secret"
 	storefile "flexconnect/internal/store/file"
+	"flexconnect/internal/types"
 	"flexconnect/internal/updater"
+	"flexconnect/internal/vpn"
 	vpnac "flexconnect/internal/vpn/anyconnect"
+	"flexconnect/internal/vpn/atrust"
+	"flexconnect/internal/vpn/multi"
 )
 
 func main() {
@@ -207,7 +212,12 @@ func newService(statePath, secretStore string) (*appd.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	service, err := appd.New(store, secrets, vpnac.New(), router.DefaultPlanner{})
+	secrets = secret.NewHybridStore(secrets, statePath+".credentials")
+	backend := multi.New(map[types.Provider]multi.Factory{
+		types.ProviderAnyConnect: func() vpn.Backend { return vpnac.New() },
+		types.ProviderATrust:     func() vpn.Backend { return atrust.New(secrets) },
+	})
+	service, err := appd.New(store, secrets, backend, router.DefaultPlanner{})
 	if err != nil {
 		return nil, err
 	}

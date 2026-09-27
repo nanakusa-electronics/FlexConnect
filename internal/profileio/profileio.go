@@ -21,6 +21,7 @@ func NormalizeProfile(profile types.Profile) types.Profile {
 	profile.Name = strings.TrimSpace(profile.Name)
 	profile.Username = strings.TrimSpace(profile.Username)
 	profile.Group = strings.TrimSpace(profile.Group)
+	profile.LoginDomain = strings.TrimSpace(profile.LoginDomain)
 	profile.ServerURL = NormalizeServerURL(profile.ServerURL)
 	profile.CustomInclude = normalizeList(profile.CustomInclude)
 	profile.CustomExclude = normalizeList(profile.CustomExclude)
@@ -74,6 +75,21 @@ func ValidateProfile(profile types.Profile) error {
 }
 
 func validateProfile(profile types.Profile) error {
+	switch profile.Provider {
+	case types.ProviderAnyConnect:
+		if profile.AuthMethod != types.AuthPassword {
+			return errors.New("AnyConnect requires password authentication")
+		}
+	case types.ProviderATrust:
+		if profile.AuthMethod != types.AuthECNUPasskey && profile.AuthMethod != types.AuthShanghaiTechPasskey {
+			return errors.New("aTrust requires a supported passkey authentication method")
+		}
+	default:
+		return fmt.Errorf("unknown VPN provider %q", profile.Provider)
+	}
+	if err := validateText("login domain", profile.LoginDomain, false, 256); err != nil {
+		return err
+	}
 	if err := validateText("profile name", profile.Name, true, 128); err != nil {
 		return err
 	}

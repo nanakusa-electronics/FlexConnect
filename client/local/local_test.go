@@ -19,7 +19,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestUpdateProfileReturnsAsyncOperation(t *testing.T) {
 	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodPatch || req.URL.EscapedPath() != "/v2/profiles/profile-1" {
+		if req.Method != http.MethodPatch || req.URL.EscapedPath() != "/v3/profiles/profile-1" {
 			t.Fatalf("request = %s %s", req.Method, req.URL.EscapedPath())
 		}
 		return &http.Response{
@@ -58,7 +58,7 @@ func TestHealthRejectsIncompatibleAPI(t *testing.T) {
 
 func TestReadyDecodesComponentReasonsFrom503(t *testing.T) {
 	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.Path != "/v2/ready" {
+		if req.URL.Path != "/v3/ready" {
 			t.Fatalf("path = %s", req.URL.Path)
 		}
 		return &http.Response{
@@ -78,7 +78,7 @@ func TestReadyDecodesComponentReasonsFrom503(t *testing.T) {
 
 func TestSetControlModeUsesV2Endpoint(t *testing.T) {
 	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodPut || req.URL.Path != "/v2/control-mode" {
+		if req.Method != http.MethodPut || req.URL.Path != "/v3/control-mode" {
 			t.Fatalf("request = %s %s", req.Method, req.URL.Path)
 		}
 		body, err := io.ReadAll(req.Body)
