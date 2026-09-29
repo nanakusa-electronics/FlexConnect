@@ -1,6 +1,6 @@
 package buildinfo
 
-var Version = "1.3.1"
+var Version = "1.3.2"
 
 // UpdateRepo is the GitHub "owner/name" used for online update checks.
 // It is overridable at build time via ldflags and at runtime via the
