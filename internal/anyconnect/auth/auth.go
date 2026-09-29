@@ -119,6 +119,11 @@ func (c *Client) Close() error {
 	err := c.Conn.Close()
 	c.Conn = nil
 	c.BufR = nil
+	// Tunnel workers also close this connection when the transport fails.
+	// Reconnect cleanup must not treat an already closed socket as a failure.
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
 	return err
 }
 

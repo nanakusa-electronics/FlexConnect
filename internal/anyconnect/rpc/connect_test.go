@@ -2,12 +2,15 @@ package rpc
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"net"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	"flexconnect/internal/anyconnect/auth"
 	"flexconnect/internal/anyconnect/session"
 	"flexconnect/internal/osnet"
 )
@@ -15,6 +18,42 @@ import (
 type fakeManager struct {
 	mu     sync.Mutex
 	closed int
+}
+
+func TestDisconnectAfterTransportClosed(t *testing.T) {
+	cleanupErr := errors.New("route cleanup failed")
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "successful cleanup"},
+		{name: "failed tunnel cleanup", err: cleanupErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			local, peer := net.Pipe()
+			t.Cleanup(func() { _ = peer.Close() })
+			conn := tls.Client(local, &tls.Config{})
+			t.Cleanup(func() { _ = conn.Close() })
+			if err := conn.Close(); err != nil {
+				t.Fatal(err)
+			}
+			sess := &session.Session{}
+			cSess := sess.NewConnSession(&http.Header{})
+			done := make(chan struct{})
+			cSess.SetTunnelDone(done)
+			cSess.SetTunnelError(tc.err)
+			close(done)
+			connection := &Connection{Auth: &auth.Client{Conn: conn}, Session: sess}
+			if err := connection.Disconnect(context.Background()); !errors.Is(err, tc.err) {
+				t.Fatalf("Disconnect error = %v, want %v", err, tc.err)
+			}
+			select {
+			case <-cSess.CloseChan:
+			default:
+				t.Fatal("Disconnect did not close the session")
+			}
+		})
+	}
 }
 
 func TestDisconnectReturnsTunnelCleanupFailure(t *testing.T) {
