@@ -9,8 +9,8 @@ import (
 	"sync"
 )
 
-// FileStore persists plaintext secrets only when an administrator explicitly
-// selects the file backend. The file and its parent directory are restricted.
+// FileStore persists daemon-owned plaintext secrets. The file and its parent
+// directory are restricted; Linux daemons use this backend by default.
 type FileStore struct {
 	path string
 	mu   sync.Mutex

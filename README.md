@@ -152,6 +152,18 @@ docker push "${IMAGE}:latest"
 docker pull ghcr.io/<OWNER>/flexconnect:<VERSION>
 ```
 
+### 守护进程密码存储
+
+Linux daemon 默认独立持久化密码，不依赖桌面登录会话或 Secret Service。
+密码以明文保存在 `--state` 文件所在目录的 `secrets.json`；目录权限为 `0700`，
+文件权限为 `0600`，打包的系统服务由 root 持有。Profile 状态仍只保存 `secret_ref`。
+这不提供磁盘加密；需要静态加密时应使用加密磁盘或显式配置可用的钥匙串。
+Windows/macOS 继续默认使用系统钥匙串，Docker 继续默认使用 `memory`。
+
+升级前使用 Linux 钥匙串的用户可设置 `FLEXCONNECT_SECRET_STORE=keyring` 保持原后端；
+切换到文件存储后须重新录入密码，不会自动迁移桌面或 root 钥匙串里的凭据。
+显式 `keyring` 模式失败时仍直接报错，不会自动降级。
+
 ### 环境变量
 
 | 变量 | 说明 |
@@ -159,7 +171,7 @@ docker pull ghcr.io/<OWNER>/flexconnect:<VERSION>
 | `FLEXCONNECT_SOCKET` | daemon 本地 Unix socket，镜像默认 `/run/flexconnect/flexconnect.sock` |
 | `FLEXCONNECT_STATE` | 状态文件路径，镜像默认 `/var/lib/flexconnect/state.json` |
 | `FLEXCONNECT_VERBOSE` | `true` 时启用 debug 日志 |
-| `FLEXCONNECT_SECRET_STORE` | `keyring`（默认且不可用时启动失败）、管理员显式选择的 `file`、或测试/容器使用的 `memory`；镜像默认 `memory` |
+| `FLEXCONNECT_SECRET_STORE` | Linux 默认 `file`；Windows/macOS 默认 `keyring`（不可用时启动失败）；可显式选择 `keyring`、`file`、`memory`；镜像默认 `memory` |
 | `FLEXCONNECT_CONNECT_ON_START` | `true` 时启动即 upsert Profile 并连接；镜像默认 `true` |
 | `FLEXCONNECT_CONNECT_TIMEOUT` | 启动连接超时，例如 `45s`、`2m` |
 | `FLEXCONNECT_PROFILE_NAME` | 启动 machine Profile 的稳定名称，镜像默认 `docker`；ID 由 daemon 生成 |

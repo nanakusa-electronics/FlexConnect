@@ -27,7 +27,7 @@ SOCKS5 proxying, and real AnyConnect password-auth sessions.
   - `appd/` owns profiles, connection state, notifications, health, operations, and proxy state.
   - `ipc/` abstracts Unix sockets and Windows named pipes.
   - `router/` plans effective routes from server routes and profile overrides.
-  - `secret/` stores passwords through the OS keyring or an in-memory test store.
+  - `secret/` stores passwords through daemon-owned files on Linux, the OS keyring, or an in-memory test store.
   - `store/file/` persists non-secret profile state as JSON.
   - `vpn/` defines the backend interface and the AnyConnect adapter.
 - `release/` contains packaging metadata, lifecycle scripts, and release target assets.
@@ -195,7 +195,7 @@ flowchart TD
   IPC --> API["internal/apiserver /v2 local API"]
   API --> Daemon["internal/appd service"]
   Daemon --> Store["internal/store/file state.json"]
-  Daemon --> Secrets["internal/secret OS keyring"]
+  Daemon --> Secrets["internal/secret daemon-owned storage"]
   Daemon --> Router["internal/router planner"]
   Daemon --> Socks["internal/socks5 proxy"]
   Daemon --> Backend["internal/vpn/anyconnect"]
@@ -209,7 +209,7 @@ The daemon `flexconnectd` listens on a platform-specific local IPC endpoint and 
 `internal/apiserver` HTTP API over that socket or named pipe. The CLI and tray both use
 `client/local`, so control commands, profile edits, status reads, diagnostics, and event watches
 share one typed client path. `internal/appd` is the stateful coordinator: it loads and persists
-profiles, stores password references in the OS keyring, starts and stops the VPN backend, computes
+profiles, stores passwords through the selected secret backend, starts and stops the VPN backend, computes
 effective routes, manages the optional SOCKS5 listener, and emits
 watch notifications. The AnyConnect adapter configures the embedded protocol stack, performs
 password auth, establishes TLS/DTLS and TUN state, then reports session details back to the daemon.
@@ -260,11 +260,12 @@ go test ./...
 ## Security & Compliance
 - `.env`, `.env.*`, generated diagnostics, state files, logs, binaries, installers, and temp
   outputs are ignored by `.gitignore`; do not commit them.
-- Passwords are stored through `internal/secret` using the OS keyring in production and a memory
-  store in tests.
-- `FLEXCONNECT_SECRET_STORE=keyring` (the default) fails startup when the OS keyring is unavailable.
-  An administrator may explicitly select `file`, which stores a `0600` plaintext JSON file with
-  platform-appropriate restrictive permissions; `memory` is for tests and explicit containers.
+- Passwords are stored through `internal/secret`: Linux defaults to daemon-owned `file` storage;
+  Windows/macOS default to the OS keyring; tests use memory storage.
+- Explicit `FLEXCONNECT_SECRET_STORE=keyring` fails startup when the OS keyring is unavailable;
+  it must never fall back automatically. `file` stores a `0600` plaintext JSON file in a `0700`
+  directory with platform-appropriate restrictive permissions; it does not encrypt secrets.
+  Existing keyring credentials are not automatically migrated when changing backends.
 - Docker defaults `FLEXCONNECT_SECRET_STORE=memory`; secrets are injected from
   `FLEXCONNECT_PASSWORD` or `FLEXCONNECT_PASSWORD_FILE`, and both set together must fail fast.
 - Profile state persists only metadata and `secret_ref` values, not raw passwords.
@@ -320,8 +321,8 @@ bounded timeout, cancellation path, maximum retries, and observable terminal fai
   - `FLEXCONNECT_SOCKET` selects the daemon Unix socket or named pipe through environment.
   - `FLEXCONNECT_STATE` selects the daemon state file through environment.
   - `FLEXCONNECT_VERBOSE=true` enables debug logging through environment.
-  - `FLEXCONNECT_SECRET_STORE=keyring|file|memory` selects password persistence; `keyring` is the
-    default and daemon startup fails if it is unavailable. `file` must be selected explicitly.
+  - `FLEXCONNECT_SECRET_STORE=keyring|file|memory` selects password persistence; Linux defaults to
+    `file`, Windows/macOS to `keyring`. Explicit keyring mode fails if unavailable.
   - `FLEXCONNECT_CONNECT_ON_START=true` creates or updates the startup profile and connects during daemon startup.
   - `FLEXCONNECT_CONNECT_TIMEOUT` bounds startup connection attempts, for example `45s`.
   - `FLEXCONNECT_PROFILE_NAME` identifies the env-managed machine profile; the daemon generates its ID.

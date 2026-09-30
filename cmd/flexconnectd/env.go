@@ -21,7 +21,6 @@ import (
 var flagErrHelp = flag.ErrHelp
 
 const (
-	defaultSecretStore    = "keyring"
 	defaultStartupProfile = "docker"
 	defaultConnectTimeout = 2 * time.Minute
 	keyringService        = "flexconnect"
@@ -263,7 +262,7 @@ func bootstrapStartup(ctx context.Context, daemon startupDaemon, cfg *startupCon
 	return nil
 }
 
-// fileSecretPath derives an explicitly selected secret file from the daemon
+// fileSecretPath derives the daemon-owned secret file from the daemon
 // state path, so the secrets live next to state.json (for example
 // /var/lib/flexconnect/secrets.json).
 func fileSecretPath(statePath string) string {
@@ -273,12 +272,15 @@ func fileSecretPath(statePath string) string {
 	return filepath.Join(filepath.Dir(statePath), fileSecretName)
 }
 
-// newSecretStore builds the secret.Store selected by kind. The default
-// "keyring" mode probes the OS keyring and fails fast if it is unavailable.
-// File storage is only enabled by an explicit FLEXCONNECT_SECRET_STORE=file.
+// newSecretStore selects storage before accessing credentials. Linux defaults
+// to daemon-owned file storage; explicit keyring mode never falls back to file.
 func newSecretStore(statePath, kind string) (secret.Store, error) {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "", "keyring":
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		kind = defaultSecretStore
+	}
+	switch kind {
+	case "keyring":
 		ks := secret.NewKeyringStore(keyringService)
 		if err := ks.Probe(); err != nil {
 			return nil, fmt.Errorf("OS keyring unavailable: %w; explicitly set FLEXCONNECT_SECRET_STORE=file or memory if that storage mode is intended", err)
