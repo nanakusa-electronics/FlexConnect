@@ -24,7 +24,8 @@ func TestReadCSTPFrameHandlesFragmentedAndConcatenatedStream(t *testing.T) {
 		t.Fatalf("first frame = type 0x%02x bytes %d payload %v", typ, wireBytes, pl.Data)
 	}
 
-	putPayloadBuffer(pl)
+	// Reuse the owned buffer without returning it to the shared pool twice.
+	pl.Data = pl.Data[:cap(pl.Data)]
 	typ, wireBytes, err = readCSTPFrame(reader, pl)
 	if err != nil {
 		t.Fatalf("read second frame: %v", err)

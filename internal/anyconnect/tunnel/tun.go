@@ -22,7 +22,8 @@ import (
 	wgtun "github.com/tailscale/wireguard-go/tun"
 )
 
-var offset = 0 // reserve space for header
+// Reserve room for Linux virtio-net headers (10 bytes) and Darwin headers (4 bytes).
+const tunPacketOffset = 16
 
 var getLocalInterface = osnet.GetLocalInterface
 
@@ -32,7 +33,6 @@ func setupTun(cSess *session.ConnSession) (wgtun.Device, error) {
 		setPlatformTunnelType()
 	} else if runtime.GOOS == "darwin" {
 		cSess.TunName = "utun"
-		offset = 4
 	} else {
 		cSess.TunName = "flexconnect"
 	}
@@ -139,60 +139,49 @@ func waitManagerUp(ctx context.Context, manager osnet.Manager, timeout time.Dura
 // 网络栈将应用数据包转给 tun 后，该函数从 tun 读取数据包，放入 cSess.PayloadOutTLS 或 cSess.PayloadOutDTLS
 // 之后由 payloadOutTLSToServer 或 payloadOutDTLSToServer 调整格式，发送给服务端
 func tunToPayloadOut(dev wgtun.Device, cSess *session.ConnSession) {
-	// tun 设备读错误
-	defer func() {
-		base.Info("tun to payloadOut exit")
-	}()
-
-	sent := 0
+	defer base.Info("tun to payloadOut exit")
+	batchSize := dev.BatchSize()
+	if batchSize < 1 {
+		batchSize = 1
+	}
+	bufs := make([][]byte, batchSize)
+	sizes := make([]int, batchSize)
+	for i := range bufs {
+		bufs[i] = make([]byte, payloadBufferSize(cSess.MTU))
+	}
 	for {
-		// 从池子申请一块内存，存放到 PayloadOutTLS 或 PayloadOutDTLS，在 payloadOutTLSToServer 或 payloadOutDTLSToServer 中释放
-		// 由 payloadOutTLSToServer 或 payloadOutDTLSToServer 添加 header 后发送出去
-		pl := getPayloadBuffer(cSess.MTU)
-		bufs := [][]byte{pl.Data}
-		sizes := []int{0}
-		readCount, err := dev.Read(bufs, sizes, offset) // 如果 tun 没有 up，会在这等待
+		clear(sizes)
+		count, err := dev.Read(bufs, sizes, tunPacketOffset)
 		if err != nil {
 			cSess.Stat.TUNReadErrors.Inc()
-			putPayloadBuffer(pl)
 			cSess.RecordClose("tun_read_error", "tun", err)
-			base.Error("tun to payloadOut error:", err)
 			cSess.Close()
 			return
 		}
-		if readCount == 0 {
-			putPayloadBuffer(pl)
-			continue
+		if count < 0 || count > batchSize {
+			err = fmt.Errorf("TUN read returned count=%d", count)
+		} else {
+			for i := 0; i < count; i++ {
+				if sizes[i] <= 0 || sizes[i] > len(bufs[i])-tunPacketOffset {
+					err = fmt.Errorf("TUN read returned count=%d size=%d", count, sizes[i])
+					break
+				}
+			}
 		}
-		cSess.Stat.TUNReads.Inc()
-		if readCount != 1 || sizes[0] <= 0 || sizes[0] > len(bufs[0])-offset {
-			err := fmt.Errorf("TUN read returned count=%d size=%d", readCount, sizes[0])
-			putPayloadBuffer(pl)
+		if err != nil {
 			cSess.RecordClose("tun_read_invalid", "tun", err)
-			base.Error("tun to payloadOut invalid read:", err)
 			cSess.Close()
 			return
 		}
-		n := sizes[0]
-		if sent < 3 {
-			base.Debug("tun to payloadOut", "size", n, "useDTLS", cSess.DtlsConnected.Load())
-		}
-		sent++
-
-		// 更新数据长度
-		pl.Data = (pl.Data)[offset : offset+n]
-
-		// base.Debug("tunToPayloadOut")
-		// if base.Cfg.LogLevel == "Debug" {
-		//     src, srcPort, dst, dstPort := utils.ResolvePacket(pl.Data)
-		//     if dst == "8.8.8.8" {
-		//         base.Debug("client from", src, srcPort, "request target", dst, dstPort)
-		//     }
-		// }
-
-		if !sendPayloadToServer(cSess, pl) {
-			putPayloadBuffer(pl)
-			return
+		for i := 0; i < count; i++ {
+			pl := getPayloadBuffer(cSess.MTU)
+			copy(pl.Data, bufs[i][tunPacketOffset:tunPacketOffset+sizes[i]])
+			pl.Data = pl.Data[:sizes[i]]
+			if !sendPayloadToServer(cSess, pl) {
+				putPayloadBuffer(pl)
+				return
+			}
+			cSess.Stat.TUNReads.Inc()
 		}
 	}
 }
@@ -259,13 +248,9 @@ func payloadInToTun(dev wgtun.Device, cSess *session.ConnSession) {
 		//     }
 		// }
 
-		if offset > 0 {
-			expand := make([]byte, offset+len(pl.Data))
-			copy(expand[offset:], pl.Data)
-			writeCount, err = dev.Write([][]byte{expand}, offset)
-		} else {
-			writeCount, err = dev.Write([][]byte{pl.Data}, offset)
-		}
+		expand := make([]byte, tunPacketOffset+len(pl.Data))
+		copy(expand[tunPacketOffset:], pl.Data)
+		writeCount, err = dev.Write([][]byte{expand}, tunPacketOffset)
 
 		if received < 3 {
 			base.Debug("payloadIn to tun", "size", len(pl.Data))
