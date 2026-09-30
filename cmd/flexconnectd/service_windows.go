@@ -11,6 +11,11 @@ import (
 
 const windowsServiceName = "FlexConnect"
 
+const (
+	powerResumeAutomatic = 0x12
+	powerResumeSuspend   = 0x07
+)
+
 func isWindowsService() bool {
 	ok, err := svc.IsWindowsService()
 	if err != nil {
@@ -28,7 +33,7 @@ type daemonService struct {
 }
 
 func (s *daemonService) Execute(_ []string, requests <-chan svc.ChangeRequest, changes chan<- svc.Status) (bool, uint32) {
-	const accepts = svc.AcceptStop | svc.AcceptShutdown
+	const accepts = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPowerEvent | svc.AcceptSessionChange
 
 	changes <- svc.Status{State: svc.StartPending}
 
@@ -37,8 +42,9 @@ func (s *daemonService) Execute(_ []string, requests <-chan svc.ChangeRequest, c
 
 	runErrCh := make(chan error, 1)
 	readyCh := make(chan error, 1)
+	resumeCh := make(chan struct{}, 1)
 	go func() {
-		runErrCh <- runDaemonReady(ctx, s.opts, readyCh)
+		runErrCh <- runDaemonReadyWithResume(ctx, s.opts, readyCh, resumeCh)
 	}()
 
 	select {
@@ -74,7 +80,19 @@ func (s *daemonService) Execute(_ []string, requests <-chan svc.ChangeRequest, c
 				}
 			case svc.Interrogate:
 				changes <- req.CurrentStatus
+			case svc.PowerEvent, svc.SessionChange:
+				if resumesWindowsSession(req) {
+					select {
+					case resumeCh <- struct{}{}:
+					default:
+					}
+				}
 			}
 		}
 	}
+}
+
+func resumesWindowsSession(req svc.ChangeRequest) bool {
+	return req.Cmd == svc.SessionChange && req.EventType == windows.WTS_SESSION_UNLOCK ||
+		req.Cmd == svc.PowerEvent && (req.EventType == powerResumeAutomatic || req.EventType == powerResumeSuspend)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -53,6 +54,14 @@ func TestDisconnectAfterTransportClosed(t *testing.T) {
 				t.Fatal("Disconnect did not close the session")
 			}
 		})
+	}
+}
+
+func TestTransientNetworkErrorIncludesInterruptedTLSHandshake(t *testing.T) {
+	for _, err := range []error{io.EOF, io.ErrUnexpectedEOF} {
+		if !isTransientNetworkError(err) {
+			t.Fatalf("%v should be retryable after an interrupted TLS handshake", err)
+		}
 	}
 }
 

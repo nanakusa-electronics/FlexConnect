@@ -84,6 +84,7 @@ type Service struct {
 	activeConnectionStarted time.Time
 	connectionHistory       []types.ConnectionEvent
 	reconnectLifecycleID    string
+	reconnectExhaustedID    string
 	networkReconnectActive  bool
 	networkReconnectID      uint64
 	networkReconnectConnID  string
@@ -1584,12 +1585,34 @@ func (s *Service) retryReconnectLocked(profileID string, manualSeq uint64, attem
 	}
 	appdLog.Printf("auto reconnect exhausted id=%q attempts=%d err=%v", profileID, attempt, err)
 	s.stopReconnectLocked()
+	if vpn.IsRetryable(err) {
+		s.reconnectExhaustedID = profileID
+	}
 	s.emitLocked(types.Notify{
 		Event:   "status",
 		Status:  ptrStatus(s.status),
 		Error:   errorMessage,
 		Message: fmt.Sprintf("Automatic reconnect stopped after %d failed attempts: %s", attempt, errorMessage),
 	})
+}
+
+// ResumeAutoReconnect gives a transiently failed connection one new bounded
+// retry cycle after Windows reports a resume or session unlock. It has no
+// effect after a manual disconnect or a non-network failure.
+func (s *Service) ResumeAutoReconnect() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	profileID := s.reconnectExhaustedID
+	if profileID == "" || s.closed {
+		return
+	}
+	s.reconnectExhaustedID = ""
+	profile, ok := s.profileAutoReconnect(profileID)
+	if !ok || s.currentID != profileID || s.connectedID != "" ||
+		!s.autoReconnectEnabledLocked(profile) {
+		return
+	}
+	s.startReconnectLocked(profileID, s.disconnectSeq, 1)
 }
 
 func reconnectFailureCode(err error) string {
@@ -1609,6 +1632,7 @@ func (s *Service) stopReconnectLocked() {
 	s.reconnectSeq = 0
 	s.reconnectNextAt = time.Time{}
 	s.reconnectLifecycleID = ""
+	s.reconnectExhaustedID = ""
 	s.reconnectID++
 }
 
