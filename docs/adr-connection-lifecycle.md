@@ -1,6 +1,6 @@
 # Connection lifecycle and reconnect ownership
 
-Status: proposed for review.
+Status: accepted.
 
 The previous daemon scheduled network repair separately from automatic reconnect. Each path
 owned a teardown and replacement connection, while retry timers continued during sleep. The
