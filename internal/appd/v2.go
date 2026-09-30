@@ -472,6 +472,15 @@ func (s *Service) registerAndRunOperation(op types.Operation, run func(context.C
 		s.mu.Unlock()
 		return coded("service_closing", "daemon is shutting down", nil)
 	}
+	if op.Kind == "connect" || op.Kind == "disconnect" || op.Kind == "profile-update" || op.Kind == "profile-delete" || op.Kind == "control-mode" {
+		// Cancel the old transaction before this command waits for commandMu.
+		// Intent is changed by the command after its profile checks succeed.
+		s.invalidateReconnectLocked()
+		s.reconnect = reconnectState{generation: s.reconnect.generation}
+		if s.attemptCancel != nil {
+			s.attemptCancel()
+		}
+	}
 	s.operations[op.ID] = op
 	s.status.Operation = cloneOperation(&op)
 	s.emitLocked(types.Notify{Event: "operation", Operation: cloneOperation(&op)})

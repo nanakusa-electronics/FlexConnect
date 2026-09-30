@@ -194,8 +194,8 @@ func (m *underlayMonitor) run() {
 			}
 			continue
 		}
-		lastSnapshotError = false
-		if sameUnderlay(m.currentSnapshot(), next) {
+		recovered := lastSnapshotError
+		if !recovered && sameUnderlay(m.currentSnapshot(), next) {
 			continue
 		}
 
@@ -211,6 +211,7 @@ func (m *underlayMonitor) run() {
 			}
 			latest, latestErr := m.snapshot(m.ctx)
 			if latestErr != nil {
+				lastSnapshotError = true
 				m.emit(UnderlayChange{
 					Before:         m.currentSnapshot(),
 					Reasons:        []string{"snapshot_error_after_change"},
@@ -222,6 +223,7 @@ func (m *underlayMonitor) run() {
 			next = latest
 		}
 
+		lastSnapshotError = false
 		before := m.currentSnapshot()
 		next.Generation = before.Generation + 1
 		change := UnderlayChange{
@@ -229,6 +231,10 @@ func (m *underlayMonitor) run() {
 			After:          next,
 			Reasons:        underlayReasons(before, next),
 			RebindRequired: underlayRequiresRebind(before, next),
+		}
+		if recovered {
+			change.Reasons = append(change.Reasons, "network_recovered")
+			change.RebindRequired = true
 		}
 		m.mu.Lock()
 		m.current = next

@@ -12,6 +12,7 @@ import (
 const windowsServiceName = "FlexConnect"
 
 const (
+	powerSuspend         = 0x04
 	powerResumeAutomatic = 0x12
 	powerResumeSuspend   = 0x07
 )
@@ -42,9 +43,9 @@ func (s *daemonService) Execute(_ []string, requests <-chan svc.ChangeRequest, c
 
 	runErrCh := make(chan error, 1)
 	readyCh := make(chan error, 1)
-	resumeCh := make(chan struct{}, 1)
+	powerCh := make(chan bool, 1)
 	go func() {
-		runErrCh <- runDaemonReadyWithResume(ctx, s.opts, readyCh, resumeCh)
+		runErrCh <- runDaemonReadyWithPowerEvents(ctx, s.opts, readyCh, powerCh)
 	}()
 
 	select {
@@ -81,18 +82,26 @@ func (s *daemonService) Execute(_ []string, requests <-chan svc.ChangeRequest, c
 			case svc.Interrogate:
 				changes <- req.CurrentStatus
 			case svc.PowerEvent, svc.SessionChange:
-				if resumesWindowsSession(req) {
+				if suspended, ok := windowsPowerState(req); ok {
+					// Keep the latest power state when notifications arrive in a burst.
 					select {
-					case resumeCh <- struct{}{}:
+					case <-powerCh:
 					default:
 					}
+					powerCh <- suspended
 				}
 			}
 		}
 	}
 }
 
-func resumesWindowsSession(req svc.ChangeRequest) bool {
-	return req.Cmd == svc.SessionChange && req.EventType == windows.WTS_SESSION_UNLOCK ||
-		req.Cmd == svc.PowerEvent && (req.EventType == powerResumeAutomatic || req.EventType == powerResumeSuspend)
+func windowsPowerState(req svc.ChangeRequest) (suspended, ok bool) {
+	if req.Cmd == svc.PowerEvent && req.EventType == powerSuspend {
+		return true, true
+	}
+	if req.Cmd == svc.SessionChange && req.EventType == windows.WTS_SESSION_UNLOCK ||
+		req.Cmd == svc.PowerEvent && (req.EventType == powerResumeAutomatic || req.EventType == powerResumeSuspend) {
+		return false, true
+	}
+	return false, false
 }

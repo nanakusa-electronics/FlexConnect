@@ -43,6 +43,14 @@ Error. Automatic reconnect retries only classified transient network, DNS, timeo
 failures, with exponential backoff and a maximum of 3 attempts. Machine mode forces that policy and
 remains locked after failure or exhaustion.
 
+Connection intent survives a transient transport loss independently of the connected session.
+One daemon lifecycle owns both physical-path replacement and reconnect backoff; its generation
+and cancel context invalidate obsolete transactions before another can run. Suspend or an
+unavailable physical path pauses attempts. Network recovery (including return to the same path),
+path changes, or Windows resume/unlock can start a fresh bounded retry cycle after exhaustion.
+Manual disconnect and non-transient failures clear intent. Network observers survive transport
+loss and are closed with the backend. See [the lifecycle decision](adr-connection-lifecycle.md).
+
 ## Network transaction
 
 The network manager persists `network-ownership.json` before applying static or dynamic route/DNS

@@ -79,6 +79,29 @@ func TestDisconnectReturnsTunnelCleanupFailure(t *testing.T) {
 	}
 }
 
+func TestDisconnectDrainsSessionAlreadyClosedByTransport(t *testing.T) {
+	sess := &session.Session{}
+	cSess := sess.NewConnSession(&http.Header{})
+	done := make(chan struct{})
+	cSess.SetTunnelDone(done)
+	cSess.Close()
+	if sess.CSess != nil {
+		t.Fatal("transport close did not clear the active session")
+	}
+	connection := &Connection{Session: sess}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := connection.Disconnect(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Disconnect skipped the unfinished drain: %v", err)
+	}
+	cleanupErr := errors.New("closed session cleanup failed")
+	cSess.SetTunnelError(cleanupErr)
+	close(done)
+	if err := connection.Disconnect(context.Background()); !errors.Is(err, cleanupErr) {
+		t.Fatalf("Disconnect lost the closed session's cleanup failure: %v", err)
+	}
+}
+
 func (m *fakeManager) Up(context.Context) error { return nil }
 func (m *fakeManager) Set(context.Context, *osnet.Config) error {
 	return nil

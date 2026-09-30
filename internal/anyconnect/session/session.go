@@ -19,9 +19,19 @@ type Session struct {
 	SessionToken    string
 	PreMasterSecret []byte
 
-	ActiveClose bool
-	CloseChan   chan struct{} // 用于通知所有 UI，ConnSession 已关闭
-	CSess       *ConnSession
+	ActiveClose  bool
+	CloseChan    chan struct{} // 用于通知所有 UI，ConnSession 已关闭
+	CSess        *ConnSession
+	drainMu      sync.Mutex
+	drainSession *ConnSession
+}
+
+// DrainSession retains the transport's cleanup owner after Close clears CSess.
+// Its tunnel controller can still be draining packet workers and OS state.
+func (sess *Session) DrainSession() *ConnSession {
+	sess.drainMu.Lock()
+	defer sess.drainMu.Unlock()
+	return sess.drainSession
 }
 
 type stat struct {
@@ -205,6 +215,9 @@ func (sess *Session) NewConnSession(header *http.Header) *ConnSession {
 		},
 	}
 	cSess.DSess.owner = cSess
+	sess.drainMu.Lock()
+	sess.drainSession = cSess
+	sess.drainMu.Unlock()
 	sess.CSess = cSess
 
 	sess.ActiveClose = false

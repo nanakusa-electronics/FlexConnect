@@ -64,10 +64,10 @@ func runDaemon(ctx context.Context, opts daemonOptions) error {
 }
 
 func runDaemonReady(ctx context.Context, opts daemonOptions, ready chan<- error) (err error) {
-	return runDaemonReadyWithResume(ctx, opts, ready, nil)
+	return runDaemonReadyWithPowerEvents(ctx, opts, ready, nil)
 }
 
-func runDaemonReadyWithResume(ctx context.Context, opts daemonOptions, ready chan<- error, resume <-chan struct{}) (err error) {
+func runDaemonReadyWithPowerEvents(ctx context.Context, opts daemonOptions, ready chan<- error, powerEvents <-chan bool) (err error) {
 	startedAt := time.Now()
 	readySent := false
 	sendReady := func(readyErr error) {
@@ -164,8 +164,12 @@ func runDaemonReadyWithResume(ctx context.Context, opts daemonOptions, ready cha
 			return err
 		case fatalErr := <-service.FatalErrors():
 			return fatalErr
-		case <-resume:
-			service.ResumeAutoReconnect()
+		case suspended, ok := <-powerEvents:
+			if !ok {
+				powerEvents = nil
+				continue
+			}
+			service.SetSuspended(suspended)
 		case <-ctx.Done():
 			serverLog.Printf("shutdown requested after %s", time.Since(startedAt))
 			serving = false

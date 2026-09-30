@@ -82,7 +82,9 @@ flexconnect netcheck --env-file .env --no-speedtest --json
 守护进程只在运行期间保留有界的近期连接历史。`flexconnect watch` 以
 NDJSON 输出 `connection_lost`、`reconnect_scheduled`、`reconnect_attempt`、
 `reconnected`、`reconnect_failed` 和 `reconnect_exhausted` 等生命周期事件；自动重连
-最多尝试 3 次，用尽后进入可观测的 `Error` 状态，需要用户手动重试。`flexconnect diag`
+每轮最多尝试 3 次，用尽后进入可观测的 `Error` 状态，不再定时重试；网络恢复、路径变化或
+Windows 唤醒/解锁后，仍有连接意图的瞬时故障会开启新一轮重试。休眠或物理网络不可用时
+会暂停并取消正在进行的自动连接尝试。认证等非瞬时故障需要用户手动重试。`flexconnect diag`
 会同时包含这些事件、最后一次传输/关闭原因以及当前重连快照。
 
 主动断开会被记录为人为操作，不会触发异常断线重连通知。非主动断开及重连进度会由托盘

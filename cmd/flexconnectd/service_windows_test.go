@@ -9,19 +9,20 @@ import (
 	"golang.org/x/sys/windows/svc"
 )
 
-func TestResumesWindowsSession(t *testing.T) {
+func TestWindowsPowerState(t *testing.T) {
 	for _, tc := range []struct {
-		request svc.ChangeRequest
-		want    bool
+		request   svc.ChangeRequest
+		suspended bool
+		want      bool
 	}{
-		{svc.ChangeRequest{Cmd: svc.SessionChange, EventType: windows.WTS_SESSION_UNLOCK}, true},
-		{svc.ChangeRequest{Cmd: svc.PowerEvent, EventType: powerResumeAutomatic}, true},
-		{svc.ChangeRequest{Cmd: svc.PowerEvent, EventType: powerResumeSuspend}, true},
-		{svc.ChangeRequest{Cmd: svc.SessionChange, EventType: windows.WTS_SESSION_LOCK}, false},
-		{svc.ChangeRequest{Cmd: svc.PowerEvent, EventType: 4}, false},
+		{svc.ChangeRequest{Cmd: svc.SessionChange, EventType: windows.WTS_SESSION_UNLOCK}, false, true},
+		{svc.ChangeRequest{Cmd: svc.PowerEvent, EventType: powerResumeAutomatic}, false, true},
+		{svc.ChangeRequest{Cmd: svc.PowerEvent, EventType: powerResumeSuspend}, false, true},
+		{svc.ChangeRequest{Cmd: svc.SessionChange, EventType: windows.WTS_SESSION_LOCK}, false, false},
+		{svc.ChangeRequest{Cmd: svc.PowerEvent, EventType: powerSuspend}, true, true},
 	} {
-		if got := resumesWindowsSession(tc.request); got != tc.want {
-			t.Fatalf("resumesWindowsSession(%v) = %t, want %t", tc.request, got, tc.want)
+		if suspended, got := windowsPowerState(tc.request); got != tc.want || suspended != tc.suspended {
+			t.Fatalf("windowsPowerState(%v) valid = %t, want %t", tc.request, got, tc.want)
 		}
 	}
 }

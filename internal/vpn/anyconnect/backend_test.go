@@ -15,8 +15,9 @@ import (
 )
 
 type fakeMonitor struct {
-	mu     sync.Mutex
-	closed bool
+	mu      sync.Mutex
+	closed  bool
+	changes chan osnet.UnderlayChange
 }
 
 func (m *fakeMonitor) Snapshot(context.Context) (osnet.UnderlaySnapshot, error) {
@@ -24,7 +25,7 @@ func (m *fakeMonitor) Snapshot(context.Context) (osnet.UnderlaySnapshot, error) 
 }
 
 func (m *fakeMonitor) Changes(context.Context) <-chan osnet.UnderlayChange {
-	return make(chan osnet.UnderlayChange)
+	return m.changes
 }
 
 func (m *fakeMonitor) Close() error {
@@ -47,7 +48,7 @@ type monitorRecorder struct {
 
 func (r *monitorRecorder) factory() func(context.Context, osnet.MonitorOptions) (osnet.Monitor, error) {
 	return func(context.Context, osnet.MonitorOptions) (osnet.Monitor, error) {
-		monitor := &fakeMonitor{}
+		monitor := &fakeMonitor{changes: make(chan osnet.UnderlayChange, 4)}
 		r.mu.Lock()
 		r.monitors = append(r.monitors, monitor)
 		r.mu.Unlock()
@@ -120,7 +121,7 @@ func TestStartUnderlayMonitorReplacesStaleMonitor(t *testing.T) {
 	}
 }
 
-func TestMonitorCloseReleasesMonitorOnUnexpectedSessionEnd(t *testing.T) {
+func TestMonitorCloseKeepsNetworkObserverAfterSessionEnd(t *testing.T) {
 	backend, recorder := newTestBackend()
 	connection := acRPC.NewConnection(buildAuthProfile(typesProfileStub(), "ignored"))
 	cSess := connection.Session.NewConnSession(&http.Header{})
@@ -143,8 +144,8 @@ func TestMonitorCloseReleasesMonitorOnUnexpectedSessionEnd(t *testing.T) {
 		t.Fatal("monitorClose did not emit the disconnect event")
 	}
 	monitors := recorder.all()
-	if len(monitors) != 1 || !monitors[0].isClosed() {
-		t.Fatal("underlay monitor was not released after the session ended")
+	if len(monitors) != 1 || monitors[0].isClosed() {
+		t.Fatal("network observer must remain active after the session ended")
 	}
 
 	// Reconnect after the unexpected drop: this used to fail with
@@ -190,4 +191,34 @@ func TestMonitorCloseDoesNotReleaseReplacementMonitor(t *testing.T) {
 		t.Fatal("delayed teardown of the old session closed the replacement monitor")
 	}
 	backend.stopUnderlayMonitor()
+}
+
+func TestNetworkObserverSurvivesDisconnectAndReportsRecovery(t *testing.T) {
+	backend, recorder := newTestBackend()
+	cSess := newMonitorTestSession(t)
+	if err := backend.startUnderlayMonitor(cSess, "vpn-1", monitorRequest("vpn-1")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backend.Close(context.Background()) })
+	monitor := recorder.all()[0]
+	if err := backend.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, reason := range []string{"snapshot_error", "network_recovered"} {
+		monitor.changes <- osnet.UnderlayChange{Reasons: []string{reason}, RebindRequired: true}
+		select {
+		case event := <-backend.events:
+			if event.Type != "network_change" || event.ConnectionID != "vpn-1" || event.Network.Reasons[0] != reason {
+				t.Fatalf("network event = %+v", event)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("network observer missed %s after disconnect", reason)
+		}
+	}
+	if err := backend.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !monitor.isClosed() {
+		t.Fatal("backend shutdown did not close network observer")
+	}
 }
