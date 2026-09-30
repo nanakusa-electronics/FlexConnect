@@ -101,8 +101,7 @@ func (c *Connection) Disconnect(ctx context.Context) error {
 			first = err
 		}
 	}
-	if c.Session.CSess != nil {
-		cSess := c.Session.CSess
+	if cSess := c.Session.DrainSession(); cSess != nil {
 		cSess.RecordClose("local_requested", "local", nil)
 		cSess.Close()
 		// The tunnel controller owns the TUN device and network manager once
@@ -123,10 +122,8 @@ func (c *Connection) Disconnect(ctx context.Context) error {
 				}
 			case <-timer.C:
 				base.Warn("tunnel drain timed out during disconnect")
-				if cSess.NetworkManager != nil {
-					if err := cSess.NetworkManager.Close(ctx); err != nil && first == nil {
-						first = err
-					}
+				if first == nil {
+					first = errors.New("VPN tunnel drain timed out")
 				}
 			}
 		} else if cSess.NetworkManager != nil {

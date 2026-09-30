@@ -159,10 +159,8 @@ func (b *Backend) monitorClose(cSess *acSession.ConnSession, connectionID string
 	}
 	acBase.Info("vpn monitor close started")
 	<-cSess.CloseChan
-	// Sessions can end for reasons that never pass through Backend.Disconnect
-	// (server disconnect, transport failure). Release the underlay monitor
-	// here too so the next connect does not inherit a stale one.
-	b.stopMonitorFor(connectionID)
+	// The physical-network observer belongs to the backend lifetime, so it
+	// can report recovery even after the transport has ended.
 	acBase.Info("vpn monitor close done")
 	info := cSess.CloseInfo()
 	faults := make([]vpn.TransportFault, 0, len(info.TransportFaults))
@@ -183,7 +181,6 @@ func (b *Backend) Disconnect(ctx context.Context) error {
 	b.active = nil
 	b.connecting = nil
 	b.mu.Unlock()
-	b.stopUnderlayMonitor()
 	var firstErr error
 	if connecting != nil && connecting != connection {
 		if err := connecting.Disconnect(ctx); err != nil {
@@ -199,6 +196,7 @@ func (b *Backend) Disconnect(ctx context.Context) error {
 }
 
 func (b *Backend) Close(ctx context.Context) error {
+	b.stopUnderlayMonitor()
 	return b.Disconnect(ctx)
 }
 
@@ -297,10 +295,7 @@ func (b *Backend) startUnderlayMonitor(cSess *acSession.ConnSession, connectionI
 	b.monitorMu.Lock()
 	defer b.monitorMu.Unlock()
 	if b.monitor != nil {
-		// A leftover monitor means the previous session ended without going
-		// through Backend.Disconnect. Replacing it keeps a new profile or
-		// reconnect from failing on "underlay monitor already active".
-		acBase.Warn("replacing stale underlay monitor", "previous", b.monitorID, "current", connectionID)
+		// Refresh the TUN exclusion and connection identity on replacement.
 		b.stopUnderlayMonitorLocked()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -323,17 +318,23 @@ func (b *Backend) startUnderlayMonitor(cSess *acSession.ConnSession, connectionI
 
 func (b *Backend) watchUnderlay(ctx context.Context, monitor osnet.Monitor, connectionID string, request vpn.ConnectRequest) {
 	changes := monitor.Changes(ctx)
-	for change := range changes {
-		event := vpn.Event{Type: "network_change", ConnectionID: connectionID, AttemptID: request.AttemptID, ProfileID: request.Profile.ID, OwnerID: request.OwnerID, Network: convertNetworkChange(change)}
+	for {
+		var change osnet.UnderlayChange
+		select {
+		case <-ctx.Done():
+			return
+		case next, ok := <-changes:
+			if !ok {
+				return
+			}
+			change = next
+		}
+		event := vpn.Event{Type: "network_change", ConnectionID: connectionID, ProfileID: request.Profile.ID, OwnerID: request.OwnerID, Network: convertNetworkChange(change)}
 		select {
 		case b.events <- event:
 		case <-ctx.Done():
 			return
 		}
-		// One event starts one controlled repair transaction. The next monitor
-		// instance is created after the new connection is established.
-		b.stopUnderlayMonitor()
-		return
 	}
 }
 

@@ -33,5 +33,6 @@ flexd-sslcon-state.json
 flexd-test-state.json
 
 # Temp/cache
+.tmp/
 tmp/
 temp/

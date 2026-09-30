@@ -101,4 +101,22 @@ func TestUnderlayMonitorReportsSnapshotErrorOnceUntilRecovery(t *testing.T) {
 		}
 	case <-time.After(35 * time.Millisecond):
 	}
+	// Recovery to exactly the previous interface/address still wakes a paused
+	// lifecycle; a value comparison alone would lose this transition.
+	source.Set(UnderlaySnapshot{InterfaceName: "Ethernet"}, nil)
+	select {
+	case change := <-changes:
+		if change.Err != nil || !change.RebindRequired || change.After.Generation != 2 {
+			t.Fatalf("recovery change = %+v", change)
+		}
+		found := false
+		for _, reason := range change.Reasons {
+			found = found || reason == "network_recovered"
+		}
+		if !found {
+			t.Fatalf("recovery reasons = %v", change.Reasons)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("same-path recovery was not reported")
+	}
 }

@@ -283,16 +283,16 @@ func TestResumeRestartsExhaustedTransientReconnect(t *testing.T) {
 	waitUntil(t, 500*time.Millisecond, func() bool {
 		service.mu.Lock()
 		defer service.mu.Unlock()
-		return service.reconnectExhaustedID == profile.ID
+		return service.reconnect.waitingID == profile.ID
 	})
 	if got := backend.connectCount(); got != 4 {
 		t.Fatalf("connect count before resume = %d, want 4", got)
 	}
-	service.ResumeAutoReconnect()
+	service.SetSuspended(false)
 	waitUntil(t, 500*time.Millisecond, func() bool {
 		return service.Status().State == types.StateConnected && backend.connectCount() == 5
 	})
-	service.ResumeAutoReconnect()
+	service.SetSuspended(false)
 	if got := backend.connectCount(); got != 5 {
 		t.Fatalf("duplicate resume started another connection: %d", got)
 	}
@@ -311,12 +311,12 @@ func TestManualDisconnectCancelsResumeAfterExhaustion(t *testing.T) {
 	waitUntil(t, 500*time.Millisecond, func() bool {
 		service.mu.Lock()
 		defer service.mu.Unlock()
-		return service.reconnectExhaustedID == profile.ID
+		return service.reconnect.waitingID == profile.ID
 	})
 	if err := service.Disconnect(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	service.ResumeAutoReconnect()
+	service.SetSuspended(false)
 	if got := backend.connectCount(); got != 2 {
 		t.Fatalf("resume reconnected after manual disconnect: %d", got)
 	}
@@ -342,7 +342,7 @@ func TestAutoReconnectStopsImmediatelyForNonRetryableFailure(t *testing.T) {
 	if got := history[len(history)-1].ReasonCode; got != "non_retryable_error" {
 		t.Fatalf("reason = %q", got)
 	}
-	service.ResumeAutoReconnect()
+	service.SetSuspended(false)
 	if got := backend.connectCount(); got != 2 {
 		t.Fatalf("resume retried a non-network failure: %d", got)
 	}
@@ -404,7 +404,7 @@ func TestManualDisconnectCancelsScheduledAutoReconnect(t *testing.T) {
 	waitUntil(t, 500*time.Millisecond, func() bool {
 		service.mu.Lock()
 		defer service.mu.Unlock()
-		return service.reconnectTimer != nil
+		return service.reconnect.timer != nil
 	})
 	if err := service.Disconnect(context.Background()); err != nil {
 		t.Fatalf("manual disconnect: %v", err)
@@ -432,7 +432,7 @@ func TestLocalRequestedDisconnectDoesNotScheduleAutoReconnect(t *testing.T) {
 	})
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	if service.reconnectTimer != nil {
+	if service.reconnect.timer != nil {
 		t.Fatal("local-requested disconnect scheduled automatic reconnect")
 	}
 	history := service.connectionHistory
@@ -457,9 +457,10 @@ func TestNetworkRepairDisconnectDoesNotScheduleGenericReconnect(t *testing.T) {
 			}
 			service.mu.Lock()
 			connectionID := service.activeConnectionID
-			service.networkReconnectActive = true
-			service.networkReconnectConnID = connectionID
-			service.networkReconnectProfile = profile.ID
+			service.reconnect.repair = true
+			service.reconnect.running = true
+			service.reconnect.connectionID = connectionID
+			service.reconnect.profileID = profile.ID
 			service.mu.Unlock()
 			backend.emit(vpn.Event{Type: "disconnected", ConnectionID: connectionID, Close: closeInfo})
 
@@ -469,7 +470,7 @@ func TestNetworkRepairDisconnectDoesNotScheduleGenericReconnect(t *testing.T) {
 			})
 			service.mu.Lock()
 			defer service.mu.Unlock()
-			if service.reconnectTimer != nil {
+			if service.reconnect.timer != nil {
 				t.Fatal("network repair teardown scheduled generic automatic reconnect")
 			}
 		})
@@ -602,7 +603,7 @@ func (noopTunnelDialer) LookupContextHost(context.Context, string) ([]string, er
 	return nil, errors.New("not used")
 }
 
-func newTestService(t *testing.T, backend *fakeBackend, profiles ...types.Profile) *Service {
+func newTestService(t *testing.T, backend vpn.Backend, profiles ...types.Profile) *Service {
 	t.Helper()
 	store := &memoryStore{data: storefile.Data{Profiles: profiles, CurrentProfileID: profiles[0].ID}}
 	secrets := secret.NewMemoryStore()
