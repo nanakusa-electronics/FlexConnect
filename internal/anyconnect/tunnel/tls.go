@@ -22,10 +22,12 @@ func tlsChannel(conn *tls.Conn, bufR *bufio.Reader, cSess *session.ConnSession, 
 	defer func() {
 		base.Info("tls channel exit")
 		cSess.SetTLSState("Closed")
-		resp.Body.Close()
 		_ = conn.Close()
+		resp.Body.Close()
 		cSess.Close()
 	}()
+	stopWatcher := watchSessionClose(cSess.CloseChan, conn)
+	defer stopWatcher()
 	cSess.SetTLSState("Ready")
 	base.Info("start tls channel", "peer", conn.RemoteAddr().String())
 	dead := time.Duration(session.EffectiveDPD(cSess.TLSDpdTime)+5) * time.Second
@@ -159,24 +161,17 @@ func payloadOutTLSToServer(conn *tls.Conn, cSess *session.ConnSession) {
 			return
 		}
 
-		// base.Debug("tls payloadOut to server", "Type", pl.Type)
-		if pl.Type == 0x00 {
-			// 获取数据长度
-			l := len(pl.Data)
-			// 先扩容 +8
-			pl.Data = pl.Data[:l+8]
-			// 数据后移
-			copy(pl.Data[8:], pl.Data)
-			// 添加头信息
-			copy(pl.Data[:8], proto.Header)
-			// 更新头长度
-			binary.BigEndian.PutUint16(pl.Data[4:6], uint16(l))
-		} else {
-			pl.Data = append(pl.Data[:0], proto.Header...)
-			// 设置头类型
-			pl.Data[6] = pl.Type
+		frame, encodeErr := encodeTransportPayload(pl, true)
+		err = encodeErr
+		if err == nil {
+			err = conn.SetWriteDeadline(time.Now().Add(transportWriteTimeout))
 		}
-		bytesSent, err = conn.Write(pl.Data)
+		if err == nil {
+			bytesSent, err = conn.Write(frame)
+			if err == nil && bytesSent != len(frame) {
+				err = io.ErrShortWrite
+			}
+		}
 		if err != nil {
 			putPayloadBuffer(pl)
 			code := "tls_write_error"

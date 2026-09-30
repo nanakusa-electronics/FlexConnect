@@ -207,17 +207,8 @@ func SetupTunnelWithClient(client *auth.Client, sess *session.Session) error {
 		base.Info("start dtls channel", "address", cSess.ServerAddress, "port", cSess.DTLSPort)
 		// https://datatracker.ietf.org/doc/html/draft-mavrogiannopoulos-openconnect-03#section-2.1.5
 		go dtlsChannel(cSess)
-		timer := time.NewTimer(25 * time.Second)
-		defer timer.Stop()
-		select {
-		case <-cSess.DtlsSetupChan:
-			if !cSess.DtlsConnected.Load() {
-				return errors.New("DTLS was offered but negotiation failed")
-			}
-		case <-cSess.CloseChan:
-			return errors.New("VPN session closed during DTLS negotiation")
-		case <-timer.C:
-			return errors.New("DTLS negotiation exceeded 25 seconds")
+		if err := waitDTLSSetup(cSess, 25*time.Second); err != nil {
+			return err
 		}
 	}
 
@@ -288,4 +279,38 @@ func effectiveMTU(serverMTU, profileMTU int) (int, error) {
 		return serverMTU, nil
 	}
 	return profileMTU, nil
+}
+
+func sessionSetupCloseError(cSess *session.ConnSession, stage string) error {
+	info := cSess.CloseInfo()
+	if info.Error != "" {
+		return fmt.Errorf("VPN session closed during %s (%s/%s): %s", stage, info.Transport, info.Code, info.Error)
+	}
+	return fmt.Errorf("VPN session closed during %s (%s/%s)", stage, info.Transport, info.Code)
+}
+
+func waitDTLSSetup(cSess *session.ConnSession, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-cSess.DtlsSetupChan:
+		select {
+		case <-cSess.CloseChan:
+			return sessionSetupCloseError(cSess, "DTLS negotiation")
+		default:
+		}
+		if !cSess.DtlsConnected.Load() {
+			return errors.New("DTLS was offered but negotiation failed")
+		}
+		return nil
+	case <-cSess.CloseChan:
+		return sessionSetupCloseError(cSess, "DTLS negotiation")
+	case <-timer.C:
+		select {
+		case <-cSess.CloseChan:
+			return sessionSetupCloseError(cSess, "DTLS negotiation")
+		default:
+		}
+		return errors.New("DTLS negotiation timed out")
+	}
 }

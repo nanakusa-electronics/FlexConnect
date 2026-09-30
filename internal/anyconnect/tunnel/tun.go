@@ -150,9 +150,19 @@ func tunToPayloadOut(dev wgtun.Device, cSess *session.ConnSession) {
 		bufs[i] = make([]byte, payloadBufferSize(cSess.MTU))
 	}
 	for {
+		select {
+		case <-cSess.CloseChan:
+			return
+		default:
+		}
 		clear(sizes)
 		count, err := dev.Read(bufs, sizes, tunPacketOffset)
 		if err != nil {
+			select {
+			case <-cSess.CloseChan:
+				return
+			default:
+			}
 			cSess.Stat.TUNReadErrors.Inc()
 			cSess.RecordClose("tun_read_error", "tun", err)
 			cSess.Close()
@@ -169,6 +179,7 @@ func tunToPayloadOut(dev wgtun.Device, cSess *session.ConnSession) {
 			}
 		}
 		if err != nil {
+			cSess.Stat.TUNReadErrors.Inc()
 			cSess.RecordClose("tun_read_invalid", "tun", err)
 			cSess.Close()
 			return
@@ -199,9 +210,8 @@ func payloadInToTun(dev wgtun.Device, cSess *session.ConnSession) {
 	}()
 
 	var (
-		err        error
-		pl         *proto.Payload
-		writeCount int
+		err error
+		pl  *proto.Payload
 	)
 
 	received := 0
@@ -250,15 +260,14 @@ func payloadInToTun(dev wgtun.Device, cSess *session.ConnSession) {
 
 		expand := make([]byte, tunPacketOffset+len(pl.Data))
 		copy(expand[tunPacketOffset:], pl.Data)
-		writeCount, err = dev.Write([][]byte{expand}, tunPacketOffset)
+		// Match Tailscale native TUN injection: Write counts differ across OS
+		// implementations, so the device error determines write success.
+		_, err = dev.Write([][]byte{expand}, tunPacketOffset)
 
 		if received < 3 {
 			base.Debug("payloadIn to tun", "size", len(pl.Data))
 		}
 		received++
-		if err == nil && writeCount != 1 {
-			err = fmt.Errorf("TUN write returned count=%d", writeCount)
-		}
 		if err != nil {
 			cSess.Stat.TUNWriteErrors.Inc()
 		} else {

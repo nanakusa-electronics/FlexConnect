@@ -30,11 +30,20 @@ type userTunnel struct {
 	router *userFlowRouter
 	mu     sync.RWMutex
 	once   sync.Once
+	cancel context.CancelFunc
 }
 
-func SessionTunnelDialer(_ context.Context, cSess *session.ConnSession) (corevpn.TunnelDialer, error) {
+func SessionTunnelDialer(ctx context.Context, cSess *session.ConnSession) (corevpn.TunnelDialer, error) {
 	if cSess == nil {
 		return nil, errors.New("no active VPN session")
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	select {
+	case <-cSess.CloseChan:
+		return nil, errors.New("VPN session is closed")
+	default:
 	}
 	if existing, ok := userTunnels.Load(cSess); ok {
 		return existing.(*userTunnel), nil
@@ -43,10 +52,20 @@ func SessionTunnelDialer(_ context.Context, cSess *session.ConnSession) (corevpn
 	if err != nil {
 		return nil, err
 	}
+	if ctx != nil && ctx.Err() != nil {
+		tunnel.Close()
+		return nil, ctx.Err()
+	}
 	actual, loaded := userTunnels.LoadOrStore(cSess, tunnel)
 	if loaded {
 		tunnel.Close()
-		return actual.(*userTunnel), nil
+		tunnel = actual.(*userTunnel)
+	}
+	select {
+	case <-cSess.CloseChan:
+		tunnel.Close()
+		return nil, errors.New("VPN session is closed")
+	default:
 	}
 	return tunnel, nil
 }
@@ -68,12 +87,21 @@ func newUserTunnel(cSess *session.ConnSession) (*userTunnel, error) {
 	if err != nil {
 		return nil, err
 	}
+	watchCtx, cancel := context.WithCancel(context.Background())
 	tunnel := &userTunnel{
+		cancel: cancel,
 		dev:    dev,
 		net:    tnet,
 		cSess:  cSess,
 		router: newUserFlowRouter(),
 	}
+	go func() {
+		select {
+		case <-cSess.CloseChan:
+			tunnel.Close()
+		case <-watchCtx.Done():
+		}
+	}()
 	go tunnel.userTunToPayloadOut()
 	base.Info("user-space VPN tunnel dialer started", "vpnAddress", cSess.VPNAddress, "dns", len(dns))
 	return tunnel, nil
@@ -126,7 +154,10 @@ func (t *userTunnel) Close() error {
 	}
 	var err error
 	t.once.Do(func() {
-		userTunnels.Delete(t.cSess)
+		userTunnels.CompareAndDelete(t.cSess, t)
+		if t.cancel != nil {
+			t.cancel()
+		}
 		t.mu.Lock()
 		dev := t.dev
 		t.dev = nil

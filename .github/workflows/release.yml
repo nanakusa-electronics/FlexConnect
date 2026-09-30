@@ -30,10 +30,15 @@ jobs:
       - run: go test ./...
       - run: go vet ./...
       - run: go build ./...
-      - run: go test -race ./internal/appd ./internal/apiserver ./internal/socks5 ./internal/osnet ./internal/vpn/anyconnect ./client/local
+      - run: go test -race ./internal/appd ./internal/apiserver ./internal/socks5 ./internal/osnet ./internal/vpn/anyconnect ./internal/anyconnect/tunnel ./client/local
       - name: Linux network namespace route ownership
         if: runner.os == 'Linux'
         run: sudo env "PATH=$PATH" FLEXCONNECT_NETNS_TEST=1 go test ./internal/osnet -run '^TestNetworkNamespaceRouteOwnershipTransaction$' -count=1
+      - name: Linux native TUN packet I/O
+        if: runner.os == 'Linux'
+        run: |
+          go test -c -o /tmp/flexconnect-tun.test ./internal/anyconnect/tunnel
+          sudo unshare --net env FLEXCONNECT_TUN_TEST=1 /tmp/flexconnect-tun.test -test.run '^TestNativeLinuxTUNPacketIO$' -test.timeout=15s
       - name: Windows named-pipe actor integration
         if: runner.os == 'Windows'
         run: go test ./internal/ipc -run '^TestNamedPipeCapturesClientIdentity$' -count=1

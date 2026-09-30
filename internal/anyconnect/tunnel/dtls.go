@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net"
 	"strconv"
 	"time"
@@ -97,6 +98,8 @@ func dtlsChannel(cSess *session.ConnSession) {
 		base.Error(err)
 		return
 	}
+	stopWatcher := watchSessionClose(cSess.CloseChan, conn)
+	defer stopWatcher()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err = conn.HandshakeContext(ctx); err != nil {
@@ -104,10 +107,15 @@ func dtlsChannel(cSess *session.ConnSession) {
 		base.Error(err)
 		return
 	}
-	base.Info("dtls handshake done", "id", cSess.DTLSId)
+	dSess = cSess.DSess
+	select {
+	case <-cSess.CloseChan:
+		return
+	default:
+	}
+	base.Info("dtls handshake done")
 
 	cSess.DtlsConnected.Store(true)
-	dSess = cSess.DSess
 	cSess.SetDTLSState("Ready")
 	cSess.SignalDTLSSetup()
 
@@ -160,6 +168,7 @@ func dtlsChannel(cSess *session.ConnSession) {
 			// base.Debug("dtls receive KEEPALIVE")
 			putPayloadBuffer(pl)
 		case 0x05: // DISCONNECT
+			putPayloadBuffer(pl)
 			cSess.RecordTransportFault("server_disconnect", "dtls", nil)
 			return
 		case 0x03: // DPD-REQ
@@ -220,22 +229,17 @@ func payloadOutDTLSToServer(conn *dtls.Conn, dSess *session.DtlsSession, cSess *
 			return
 		}
 
-		// base.Debug("dtls payloadOut to server")
-		if pl.Type == 0x00 {
-			// 获取数据长度
-			l := len(pl.Data)
-			// 先扩容 +1
-			pl.Data = pl.Data[:l+1]
-			// 数据后移
-			copy(pl.Data[1:], pl.Data)
-			// 添加头信息
-			pl.Data[0] = pl.Type
-		} else {
-			// 设置头类型
-			pl.Data = append(pl.Data[:0], pl.Type)
+		frame, encodeErr := encodeTransportPayload(pl, false)
+		err = encodeErr
+		if err == nil {
+			err = conn.SetWriteDeadline(time.Now().Add(transportWriteTimeout))
 		}
-
-		bytesSent, err = conn.Write(pl.Data)
+		if err == nil {
+			bytesSent, err = conn.Write(frame)
+			if err == nil && bytesSent != len(frame) {
+				err = io.ErrShortWrite
+			}
+		}
 		if err != nil {
 			putPayloadBuffer(pl)
 			code := "dtls_write_error"

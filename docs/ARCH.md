@@ -76,3 +76,27 @@ Windows named-pipe identity integration, a Linux network-namespace route transac
 contracts, platform packaging, and a Docker build. These are automated engineering checks, not
 evidence of a real AnyConnect deployment, real end-user platform networking, or an independent
 security scan.
+
+## TUN packet I/O verification
+
+Native TUN writes follow Tailscale's injection boundary: reserve 16 bytes before
+IP packet data and determine write success from the returned error. The pinned
+wireguard-go Linux implementation returns bytes (including a virtio header when
+active), while Windows/macOS return packet counts. Reads use `BatchSize()` and
+forward every returned segment into independently owned transport payloads.
+User-space netstack devices have a separate zero-offset, single-packet contract.
+
+CI and release validation exercise real Linux TUN packet I/O in an isolated
+network namespace, in addition to fake device and race tests. To run locally
+without changing host routes, compile as the ordinary user and execute in a
+new user/network namespace:
+
+```bash
+GOTOOLCHAIN=go1.26.2 go test -c -o /tmp/flexconnect-tun.test ./internal/anyconnect/tunnel
+unshare -Urn env FLEXCONNECT_TUN_TEST=1 /tmp/flexconnect-tun.test -test.run '^TestNativeLinuxTUNPacketIO$' -test.timeout=15s
+```
+
+Hosts disabling user namespaces require an administrator to run the test with
+`sudo unshare --net` instead. The test is opt-in and does not authenticate to a
+VPN server. Passing it proves native packet handling, not end-to-end AnyConnect
+compatibility with a particular server.

@@ -27,9 +27,22 @@ func (d *offloadTestDevice) Write(bufs [][]byte, offset int) (int, error) {
 }
 
 func TestTunWriteReservesOffloadHeader(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		count int
+	}{
+		{"packet count", 1}, {"Linux byte count", 60}, {"Linux offload byte count", 70},
+	} {
+		t.Run(tt.name, func(t *testing.T) { testTunWrite(t, tt.count) })
+	}
+}
+
+func testTunWrite(t *testing.T, count int) {
 	cSess := (&session.Session{}).NewConnSession(&http.Header{})
 	defer cSess.Close()
-	packet := []byte{0x45, 0, 0, 20, 1, 2, 3, 4}
+	packet := make([]byte, 60)
+	packet[0] = 0x45
+	packet[59] = 0x7f
 	written := make(chan []byte, 1)
 	dev := &offloadTestDevice{testTUNDevice: newTestTUNDevice()}
 	dev.write = func(bufs [][]byte, offset int) (int, error) {
@@ -37,7 +50,7 @@ func TestTunWriteReservesOffloadHeader(t *testing.T) {
 			return 0, errors.New("invalid offset")
 		}
 		written <- append([]byte(nil), bufs[0][offset:]...)
-		return 1, nil
+		return count, nil
 	}
 	cSess.PayloadIn <- &proto.Payload{Data: packet}
 	done := make(chan struct{})
@@ -58,6 +71,10 @@ func TestTunWriteReservesOffloadHeader(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker did not stop")
 	}
+	if cSess.Stat.TUNWriteErrors.Load() != 0 || cSess.Stat.TUNWrites.Load() != 1 {
+		t.Fatalf("write stats: successes=%d errors=%d", cSess.Stat.TUNWrites.Load(), cSess.Stat.TUNWriteErrors.Load())
+	}
+
 }
 
 func TestTunReadForwardsEveryOffloadSegment(t *testing.T) {
@@ -105,5 +122,25 @@ func TestTunReadForwardsEveryOffloadSegment(t *testing.T) {
 	}
 	if cSess.Stat.TUNReads.Load() != 2 {
 		t.Fatalf("read count = %d", cSess.Stat.TUNReads.Load())
+	}
+}
+
+func TestTunReadRejectsInvalidBatchMetadata(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		count, size int
+	}{
+		{"too many segments", 3, 1}, {"negative count", -1, 1}, {"zero size", 1, 0}, {"oversized packet", 1, 100000},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cSess := (&session.Session{}).NewConnSession(&http.Header{})
+			defer cSess.Close()
+			dev := &offloadTestDevice{testTUNDevice: newTestTUNDevice()}
+			dev.read = func(_ [][]byte, sizes []int, _ int) (int, error) { sizes[0] = tt.size; return tt.count, nil }
+			tunToPayloadOut(dev, cSess)
+			if cSess.CloseInfo().Code != "tun_read_invalid" || cSess.Stat.TUNReadErrors.Load() != 1 {
+				t.Fatalf("invalid metadata not classified: %+v", cSess.CloseInfo())
+			}
+		})
 	}
 }
