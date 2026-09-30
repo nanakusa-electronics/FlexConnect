@@ -275,17 +275,9 @@ func GetLocalInterface(context.Context) (LocalInterface, error) {
 	if err != nil {
 		return LocalInterface{}, err
 	}
-	if len(routes) == 0 {
-		return LocalInterface{}, fmt.Errorf("no default IPv4 route")
-	}
-	var route *netlink.Route
-	for i := range routes {
-		if routes[i].Dst == nil && routes[i].Gw != nil && (route == nil || routes[i].Priority < route.Priority) {
-			route = &routes[i]
-		}
-	}
-	if route == nil {
-		return LocalInterface{}, fmt.Errorf("no default IPv4 route")
+	route, err := selectLocalDefaultIPv4Route(routes)
+	if err != nil {
+		return LocalInterface{}, err
 	}
 	link, err := netlink.LinkByIndex(route.LinkIndex)
 	if err != nil {
@@ -293,7 +285,7 @@ func GetLocalInterface(context.Context) (LocalInterface, error) {
 	}
 	return LocalInterface{
 		Name:           link.Attrs().Name,
-		IP4:            routeSourceIPv4(*route, link),
+		IP4:            routeSourceIPv4(route, link),
 		MAC:            link.Attrs().HardwareAddr.String(),
 		Gateway:        route.Gw.String(),
 		InterfaceIndex: route.LinkIndex,

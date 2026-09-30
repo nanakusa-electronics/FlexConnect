@@ -23,11 +23,8 @@ func GetUnderlaySnapshot(ctx context.Context, excludeInterface string) (Underlay
 	var best *netlink.Route
 	for i := range routes {
 		route := &routes[i]
-		if route.Dst != nil && route.Dst.Mask != nil {
-			ones, bits := route.Dst.Mask.Size()
-			if bits != 32 || ones != 0 {
-				continue
-			}
+		if !isDefaultIPv4Route(*route) {
+			continue
 		}
 		link, linkErr := netlink.LinkByIndex(route.LinkIndex)
 		if linkErr != nil || link.Attrs().Name == excludeInterface {
