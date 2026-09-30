@@ -2,7 +2,7 @@
 
 FROM golang:1.26.2-bookworm AS build
 
-ARG VERSION=1.3.2
+ARG VERSION=1.3.3
 
 WORKDIR /src
 COPY go.mod go.sum ./

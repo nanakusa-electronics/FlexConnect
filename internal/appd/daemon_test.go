@@ -270,6 +270,58 @@ func TestAutoReconnectDefaultRetryLimit(t *testing.T) {
 	}
 }
 
+func TestResumeRestartsExhaustedTransientReconnect(t *testing.T) {
+	restoreReconnectPolicy(t, time.Millisecond, time.Millisecond, 3)
+	profile := testProfile("p1", true)
+	failure := vpn.WrapConnectError("tls", true, errors.New("temporary network loss"))
+	backend := newFakeBackend(nil, failure, failure, failure, nil)
+	service := newTestService(t, backend, profile)
+	if err := service.Connect(context.Background(), profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	backend.emit(vpn.Event{Type: "disconnected", Close: &vpn.DisconnectInfo{Code: "tls_read_timeout"}})
+	waitUntil(t, 500*time.Millisecond, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return service.reconnectExhaustedID == profile.ID
+	})
+	if got := backend.connectCount(); got != 4 {
+		t.Fatalf("connect count before resume = %d, want 4", got)
+	}
+	service.ResumeAutoReconnect()
+	waitUntil(t, 500*time.Millisecond, func() bool {
+		return service.Status().State == types.StateConnected && backend.connectCount() == 5
+	})
+	service.ResumeAutoReconnect()
+	if got := backend.connectCount(); got != 5 {
+		t.Fatalf("duplicate resume started another connection: %d", got)
+	}
+}
+
+func TestManualDisconnectCancelsResumeAfterExhaustion(t *testing.T) {
+	restoreReconnectPolicy(t, time.Millisecond, time.Millisecond, 1)
+	profile := testProfile("p1", true)
+	failure := vpn.WrapConnectError("tls", true, errors.New("temporary network loss"))
+	backend := newFakeBackend(nil, failure)
+	service := newTestService(t, backend, profile)
+	if err := service.Connect(context.Background(), profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	backend.emit(vpn.Event{Type: "disconnected", Close: &vpn.DisconnectInfo{Code: "tls_read_timeout"}})
+	waitUntil(t, 500*time.Millisecond, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return service.reconnectExhaustedID == profile.ID
+	})
+	if err := service.Disconnect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	service.ResumeAutoReconnect()
+	if got := backend.connectCount(); got != 2 {
+		t.Fatalf("resume reconnected after manual disconnect: %d", got)
+	}
+}
+
 func TestAutoReconnectStopsImmediatelyForNonRetryableFailure(t *testing.T) {
 	restoreReconnectPolicy(t, time.Millisecond, time.Millisecond, 3)
 	profile := testProfile("p1", true)
@@ -289,6 +341,10 @@ func TestAutoReconnectStopsImmediatelyForNonRetryableFailure(t *testing.T) {
 	history := service.Diagnostics().ConnectionHistory
 	if got := history[len(history)-1].ReasonCode; got != "non_retryable_error" {
 		t.Fatalf("reason = %q", got)
+	}
+	service.ResumeAutoReconnect()
+	if got := backend.connectCount(); got != 2 {
+		t.Fatalf("resume retried a non-network failure: %d", got)
 	}
 }
 
