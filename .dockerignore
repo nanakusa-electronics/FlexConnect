@@ -28,3 +28,7 @@ coverage.out
 flexconnect-state.json
 flexd-sslcon-state.json
 flexd-test-state.json
+
+go.work
+go.work.sum
+.tmp/

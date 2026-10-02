@@ -140,7 +140,7 @@ FLEXCONNECT_SERVER=https://vpn.example.com FLEXCONNECT_USERNAME=alice docker com
 
 ### 发布到 GitHub Packages
 
-仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `1.3.4`）以及 `<major>`、`<major>.<minor>`。
+仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0`）以及 `<major>`、`<major>.<minor>`。
 
 从 GHCR 发布镜像（可选）：
 
