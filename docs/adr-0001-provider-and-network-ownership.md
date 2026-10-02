@@ -25,3 +25,12 @@ A changed gateway pin terminates connection.
 The GeekTrust module is developed locally in a Go workspace. Release builds
 must pin a published GeekTrust version and remove the workspace dependency.
 Public contribution and distribution remain subject to upstream authorization.
+
+For aTrust domain resources, Fake-IP preserves the original domain and application
+authorization when opening TCP/UDP flows. DNS supports both UDP and length-prefixed
+TCP. When local IP/CIDR routes may bypass the VPN, DNS first resolves the real
+address and applies the same longest-prefix selection used by the OS routes.
+Bypassed destinations receive their real address. A SDK target callback checks
+the address again immediately before TCP/UDP/ICMP forwarding, so a DNS change
+cannot turn an excluded address into VPN traffic. FlexConnect owns these route
+decisions; GeekTrust retains controller authorization and transport ownership.

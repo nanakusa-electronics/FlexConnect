@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"flexconnect/internal/osnet"
@@ -105,7 +106,10 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 	if err != nil {
 		return nil, fmt.Errorf("load aTrust device identity: %w", err)
 	}
+	var targetRoutes atomic.Pointer[routePolicy]
+	targetRoutes.Store(newRoutePolicy(req.Profile, nil))
 	c, err := geektrust.New(geektrust.Options{
+		CheckTarget:           func(ip netip.Addr) error { return targetRoutes.Load().check(ip) },
 		Compatibility:         req.Profile.ATrustCompatibility,
 		ChallengeHandler:      authenticationHandler(req.Authenticate),
 		ControllerURL:         req.Profile.ServerURL,
@@ -136,6 +140,7 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 			info.SplitInclude = append(info.SplitInclude, prefix.String())
 		}
 	}
+	targetRoutes.Store(newRoutePolicy(req.Profile, info.SplitInclude))
 	manager, flows, tunName, cancel, err := b.startTUN(ctx, req, c, result, info)
 	if err != nil {
 		_ = c.Close()
@@ -342,6 +347,7 @@ func (b *Backend) startTUN(ctx context.Context, req vpn.ConnectRequest, c *geekt
 	}
 	lifetime, cancel := context.WithCancel(context.Background())
 	mapper := newDNSMapper(result, c)
+	mapper.policy = newRoutePolicy(req.Profile, info.SplitInclude)
 	flows, err := tunflow.New(lifetime, dev, flowDialer{ctx: lifetime, client: c, dns: mapper}, c, req.Profile.MTU)
 	if err != nil {
 		cancel()

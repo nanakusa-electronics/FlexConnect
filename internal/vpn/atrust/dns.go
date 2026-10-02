@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -25,6 +26,7 @@ type dnsMapper struct {
 	byIP    map[netip.Addr]string
 	leases  map[netip.Addr]time.Time
 	active  map[netip.Addr]int
+	policy  *routePolicy
 	domains []string
 	dialer  vpn.TunnelDialer
 }
@@ -33,7 +35,7 @@ func newDNSMapper(info geektrust.Info, dialer vpn.TunnelDialer) *dnsMapper {
 	m := &dnsMapper{byName: make(map[string]netip.Addr), byIP: make(map[netip.Addr]string), leases: make(map[netip.Addr]time.Time), active: make(map[netip.Addr]int), dialer: dialer}
 	for _, resource := range info.Resources {
 		name := strings.ToLower(strings.TrimSuffix(resource.Address, "."))
-		if strings.HasPrefix(name, "*.") || strings.Contains(name, ".") && !strings.Contains(name, "/") && !strings.Contains(name, "-") {
+		if strings.HasPrefix(name, "*.") || strings.Contains(name, ".") && !strings.Contains(name, "/") && len(resourcePrefixes(name)) == 0 {
 			if _, err := netip.ParseAddr(name); err != nil {
 				m.domains = append(m.domains, name)
 			}
@@ -117,8 +119,13 @@ func (d flowDialer) DialContext(ctx context.Context, network, address string) (n
 	if err != nil {
 		return nil, err
 	}
-	if ip == fakeDNS && network == "udp" && port == "53" {
-		return newDNSConn(d.ctx, d.dns), nil
+	if ip == fakeDNS && port == "53" {
+		switch network {
+		case "udp":
+			return newDNSConn(d.ctx, d.dns), nil
+		case "tcp":
+			return newDNSTCPConn(d.ctx, d.dns), nil
+		}
 	}
 	if name := d.dns.reserveIP(ip); name != "" {
 		host = name
@@ -128,6 +135,9 @@ func (d flowDialer) DialContext(ctx context.Context, network, address string) (n
 			return nil, err
 		}
 		return &leasedConn{Conn: conn, release: func() { d.dns.releaseIP(ip) }}, nil
+	}
+	if netip.MustParsePrefix("198.18.0.0/15").Contains(ip) {
+		return nil, errors.New("unknown Fake-IP destination")
 	}
 	return d.client.DialContext(ctx, network, net.JoinHostPort(host, port))
 }
@@ -149,7 +159,7 @@ func (m *dnsMapper) answer(ctx context.Context, query []byte) ([]byte, error) {
 	if err := request.Unpack(query); err != nil {
 		return nil, err
 	}
-	response := dnsmessage.Message{Header: dnsmessage.Header{ID: request.Header.ID, Response: true, RecursionAvailable: true}, Questions: request.Questions}
+	response := dnsmessage.Message{Header: dnsmessage.Header{ID: request.Header.ID, Response: true, RecursionDesired: request.RecursionDesired, RecursionAvailable: true}, Questions: request.Questions}
 	if len(request.Questions) != 1 {
 		response.RCode = dnsmessage.RCodeFormatError
 		return response.Pack()
@@ -160,16 +170,12 @@ func (m *dnsMapper) answer(ctx context.Context, query []byte) ([]byte, error) {
 		return response.Pack()
 	}
 	var ip netip.Addr
-	if m.authorizedDomain(name) {
-		var err error
-		ip, err = m.allocate(name)
-		if err != nil {
-			return nil, err
-		}
-	} else {
+	useFake := m.authorizedDomain(name)
+	// Decide using real addresses when local route choices may bypass the VPN.
+	if !useFake || (m.policy != nil && (!m.policy.acceptServer || len(m.policy.exclude) > 0)) {
 		addrs, err := m.dialer.LookupContextHost(ctx, name)
 		if err != nil {
-			response.RCode = dnsmessage.RCodeNameError
+			response.RCode = dnsmessage.RCodeServerFailure
 			return response.Pack()
 		}
 		for _, addr := range addrs {
@@ -179,7 +185,17 @@ func (m *dnsMapper) answer(ctx context.Context, query []byte) ([]byte, error) {
 			}
 		}
 		if !ip.IsValid() {
-			response.RCode = dnsmessage.RCodeNameError
+			return response.Pack()
+		}
+		if useFake && m.policy.check(ip) != nil {
+			useFake = false
+		}
+	}
+	if useFake {
+		var err error
+		ip, err = m.allocate(name)
+		if err != nil {
+			response.RCode = dnsmessage.RCodeServerFailure
 			return response.Pack()
 		}
 	}
@@ -188,29 +204,42 @@ func (m *dnsMapper) answer(ctx context.Context, query []byte) ([]byte, error) {
 }
 
 type dnsConn struct {
-	ctx      context.Context
-	mapper   *dnsMapper
-	mu       sync.Mutex
-	closed   bool
-	deadline time.Time
-	answers  chan []byte
-	done     chan struct{}
+	ctx           context.Context
+	mapper        *dnsMapper
+	mu            sync.Mutex
+	closed        bool
+	readDeadline  time.Time
+	writeDeadline time.Time
+	cancel        context.CancelFunc
+	answers       chan []byte
+	done          chan struct{}
 }
 
 func newDNSConn(ctx context.Context, m *dnsMapper) *dnsConn {
-	return &dnsConn{ctx: ctx, mapper: m, answers: make(chan []byte, 8), done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(ctx)
+	return &dnsConn{ctx: ctx, cancel: cancel, mapper: m, answers: make(chan []byte, 8), done: make(chan struct{})}
 }
 func (c *dnsConn) Write(p []byte) (int, error) {
 	c.mu.Lock()
-	closed := c.closed
+	closed, deadline := c.closed, c.writeDeadline
 	c.mu.Unlock()
 	if closed {
 		return 0, net.ErrClosed
 	}
-	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
+	expires := time.Now().Add(5 * time.Second)
+	if !deadline.IsZero() && deadline.Before(expires) {
+		expires = deadline
+	}
+	ctx, cancel := context.WithDeadline(c.ctx, expires)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	response, err := c.mapper.answer(ctx, p)
 	if err != nil {
+		return 0, err
+	}
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
 	select {
@@ -224,7 +253,7 @@ func (c *dnsConn) Write(p []byte) (int, error) {
 }
 func (c *dnsConn) Read(p []byte) (int, error) {
 	c.mu.Lock()
-	closed, deadline := c.closed, c.deadline
+	closed, deadline := c.closed, c.readDeadline
 	c.mu.Unlock()
 	if closed {
 		return 0, net.ErrClosed
@@ -256,6 +285,7 @@ func (c *dnsConn) Close() error {
 	if !c.closed {
 		c.closed = true
 		close(c.done)
+		c.cancel()
 	}
 	c.mu.Unlock()
 	return nil
@@ -266,15 +296,63 @@ func (c *dnsConn) LocalAddr() net.Addr {
 func (c *dnsConn) RemoteAddr() net.Addr { return &net.UDPAddr{IP: net.IP(fakeDNS.AsSlice()), Port: 53} }
 func (c *dnsConn) SetDeadline(t time.Time) error {
 	c.mu.Lock()
-	c.deadline = t
+	c.readDeadline, c.writeDeadline = t, t
 	c.mu.Unlock()
 	return nil
 }
-func (c *dnsConn) SetReadDeadline(t time.Time) error  { return c.SetDeadline(t) }
-func (c *dnsConn) SetWriteDeadline(t time.Time) error { return c.SetDeadline(t) }
+func (c *dnsConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.readDeadline = t
+	return nil
+}
+func (c *dnsConn) SetWriteDeadline(t time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.writeDeadline = t
+	return nil
+}
 
 type osDeadline struct{}
 
 func (osDeadline) Error() string   { return "i/o timeout" }
 func (osDeadline) Timeout() bool   { return true }
 func (osDeadline) Temporary() bool { return true }
+
+func newDNSTCPConn(ctx context.Context, mapper *dnsMapper) net.Conn {
+	client, server := net.Pipe()
+	go func() {
+		defer server.Close()
+		stop := context.AfterFunc(ctx, func() { server.Close() })
+		defer stop()
+		for {
+			_ = server.SetReadDeadline(time.Now().Add(2 * time.Minute))
+			var size [2]byte
+			if _, err := io.ReadFull(server, size[:]); err != nil {
+				return
+			}
+			n := int(binary.BigEndian.Uint16(size[:]))
+			if n < 12 {
+				return
+			}
+			query := make([]byte, n)
+			if _, err := io.ReadFull(server, query); err != nil {
+				return
+			}
+			lookup, cancel := context.WithTimeout(ctx, 5*time.Second)
+			answer, err := mapper.answer(lookup, query)
+			cancel()
+			if err != nil || len(answer) > 65535 {
+				return
+			}
+			frame := make([]byte, 2+len(answer))
+			binary.BigEndian.PutUint16(frame[:2], uint16(len(answer)))
+			copy(frame[2:], answer)
+			_ = server.SetWriteDeadline(time.Now().Add(15 * time.Second))
+			if _, err := server.Write(frame); err != nil {
+				return
+			}
+		}
+	}()
+	return client
+}
