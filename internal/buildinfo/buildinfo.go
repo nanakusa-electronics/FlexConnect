@@ -12,6 +12,7 @@ const LocalAPIVersion = "3"
 const LocalAPIMajor = 3
 
 var LocalAPICapabilities = []string{
+	"authentication",
 	"component-health",
 	"machine-mode",
 	"operations",

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"flexconnect/internal/types"
 )
@@ -57,5 +58,19 @@ func TestConnectionNotificationKinds(t *testing.T) {
 	}
 	if len(recorder.calls) != 5 {
 		t.Fatalf("notification calls = %d, want 5", len(recorder.calls))
+	}
+}
+
+func TestAuthenticationNotificationDeduplicatesAndIgnoresExpired(t *testing.T) {
+	recorder := &recordingNotifier{}
+	menu := &Menu{notifier: recorder}
+	challenge := types.AuthenticationChallenge{ID: "challenge", Method: "sms", ExpiresAt: timeNow().Add(time.Minute)}
+	menu.handleNotify(types.Notify{Event: "authentication", Authentication: &challenge}, func() {})
+	menu.handleNotify(types.Notify{Event: "snapshot", Authentication: &challenge}, func() {})
+	challenge.ID = "expired"
+	challenge.ExpiresAt = timeNow().Add(-time.Second)
+	menu.handleNotify(types.Notify{Authentication: &challenge}, func() {})
+	if len(recorder.calls) != 1 || !strings.Contains(recorder.calls[0], "flexconnect auth respond") {
+		t.Fatalf("notifications: %v", recorder.calls)
 	}
 }

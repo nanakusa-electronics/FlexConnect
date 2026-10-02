@@ -56,6 +56,7 @@ type Store interface {
 }
 
 type Service struct {
+	authentication          *pendingAuthentication
 	mu                      sync.Mutex
 	commandMu               sync.Mutex
 	store                   Store
@@ -1641,7 +1642,9 @@ func (s *Service) connectPreparedProfile(ctx context.Context, profile types.Prof
 	})
 	s.mu.Unlock()
 
-	session, err := s.backend.Connect(attemptCtx, vpn.ConnectRequest{Profile: profile, Password: password, AttemptID: attemptID, ConnectionID: connectionID, OwnerID: profile.OwnerID})
+	session, err := s.backend.Connect(attemptCtx, vpn.ConnectRequest{Profile: profile, Password: password, AttemptID: attemptID, ConnectionID: connectionID, OwnerID: profile.OwnerID, Authenticate: func(ctx context.Context, prompt vpn.AuthenticationPrompt) (string, error) {
+		return s.requestAuthentication(ctx, profile.ID, attemptID, connectionID, prompt)
+	}})
 	if err != nil {
 		s.mu.Lock()
 		if s.attemptID != attemptID {

@@ -326,22 +326,36 @@ type LogEntry struct {
 	Message string `json:"message"`
 }
 
+// AuthenticationChallenge contains prompt metadata only. Responses never enter events or storage.
+type AuthenticationChallenge struct {
+	ID           string    `json:"id"`
+	ConnectionID string    `json:"connection_id"`
+	ProfileID    string    `json:"profile_id"`
+	Method       string    `json:"method"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+type AuthenticationResponse struct {
+	Response string `json:"response"`
+}
+
 type Notify struct {
-	Epoch      string           `json:"epoch"`
-	Revision   uint64           `json:"revision"`
-	Version    string           `json:"version"`
-	Event      string           `json:"event"`
-	Status     *Status          `json:"status,omitempty"`
-	Traffic    *TrafficSnapshot `json:"traffic,omitempty"`
-	Profile    *Profile         `json:"profile,omitempty"`
-	Profiles   []Profile        `json:"profiles,omitempty"`
-	Logs       []LogEntry       `json:"logs,omitempty"`
-	Message    string           `json:"message,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	Connection *ConnectionEvent `json:"connection,omitempty"`
-	Network    *NetworkChange   `json:"network,omitempty"`
-	Operation  *Operation       `json:"operation,omitempty"`
-	Time       string           `json:"time"`
+	Authentication *AuthenticationChallenge `json:"authentication,omitempty"`
+	Epoch          string                   `json:"epoch"`
+	Revision       uint64                   `json:"revision"`
+	Version        string                   `json:"version"`
+	Event          string                   `json:"event"`
+	Status         *Status                  `json:"status,omitempty"`
+	Traffic        *TrafficSnapshot         `json:"traffic,omitempty"`
+	Profile        *Profile                 `json:"profile,omitempty"`
+	Profiles       []Profile                `json:"profiles,omitempty"`
+	Logs           []LogEntry               `json:"logs,omitempty"`
+	Message        string                   `json:"message,omitempty"`
+	Error          string                   `json:"error,omitempty"`
+	Connection     *ConnectionEvent         `json:"connection,omitempty"`
+	Network        *NetworkChange           `json:"network,omitempty"`
+	Operation      *Operation               `json:"operation,omitempty"`
+	Time           string                   `json:"time"`
 }
 
 // UpdateAsset describes one downloadable artifact attached to a release.

@@ -267,3 +267,19 @@ go run ./cmd/dist build --version 2.0.0 darwin/arm64/pkg
 ## 验证边界
 
 2.0.0 的三平台原生 CI、安装包和容器验证仍需在固定 GeekTrust 远程版本后完成。实际 VPN/TUN 连接验证须按运行平台分别记录。
+
+### Additional authentication in 2.0
+
+When an aTrust controller requests SMS verification, the tray displays a notice.
+Keep the connection attempt running and use another terminal:
+
+```sh
+flexconnect auth status
+flexconnect auth respond
+```
+
+The response prompt masks terminal input. For automation, use
+`flexconnect auth respond --response-stdin` with a private input source. Codes are
+not accepted on the command line and are not saved. Requests expire within one
+minute; submitting a code acknowledges delivery to the provider, while the ongoing
+connection operation reports the final authentication result.

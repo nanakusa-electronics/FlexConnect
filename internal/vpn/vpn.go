@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"time"
 
 	"flexconnect/internal/types"
 )
@@ -42,7 +43,15 @@ type Event struct {
 	Component    string
 }
 
+type AuthenticationPrompt struct {
+	Method    string
+	ExpiresAt time.Time
+}
+
+type AuthenticationHandler func(context.Context, AuthenticationPrompt) (string, error)
+
 type ConnectRequest struct {
+	Authenticate AuthenticationHandler
 	Profile      types.Profile
 	Password     string
 	AttemptID    string

@@ -91,21 +91,22 @@ type toggleState struct {
 type Menu struct {
 	Client daemonClient
 
-	rebuildMu      sync.Mutex
-	mu             sync.Mutex
-	status         *types.Status
-	traffic        types.TrafficSnapshot
-	profiles       []types.Profile
-	updateInfo     *types.UpdateInfo
-	updateNotified bool
-	rebuildCh      chan struct{}
-	runCtx         context.Context
-	runCancel      context.CancelFunc
-	menuCancel     context.CancelFunc
-	notifier       notificationSender
-	notified       map[string]time.Time
-	errorSeen      map[string]time.Time
-	render         func(context.Context, menuModel)
+	rebuildMu              sync.Mutex
+	mu                     sync.Mutex
+	status                 *types.Status
+	traffic                types.TrafficSnapshot
+	profiles               []types.Profile
+	updateInfo             *types.UpdateInfo
+	updateNotified         bool
+	rebuildCh              chan struct{}
+	runCtx                 context.Context
+	runCancel              context.CancelFunc
+	menuCancel             context.CancelFunc
+	notifier               notificationSender
+	notified               map[string]time.Time
+	authenticationNotified string
+	errorSeen              map[string]time.Time
+	render                 func(context.Context, menuModel)
 }
 
 func (m *Menu) Run() {
@@ -714,6 +715,9 @@ func (m *Menu) handleNotify(notify types.Notify, updateTooltip func()) {
 		trafficChanged = true
 	}
 	m.mu.Unlock()
+	if notify.Authentication != nil {
+		m.notifyAuthentication(*notify.Authentication)
+	}
 	if notify.Connection != nil {
 		m.notifyConnection(*notify.Connection)
 	}
@@ -1066,5 +1070,23 @@ func formatByteFloat(bytes float64) string {
 		return fmt.Sprintf("%.2f KiB", bytes/float64(kibi))
 	default:
 		return fmt.Sprintf("%.0f B", bytes)
+	}
+}
+
+func (m *Menu) notifyAuthentication(challenge types.AuthenticationChallenge) {
+	if challenge.ID == "" || challenge.Method != "sms" || !timeNow().Before(challenge.ExpiresAt) {
+		return
+	}
+	m.init()
+	m.mu.Lock()
+	if m.authenticationNotified == challenge.ID {
+		m.mu.Unlock()
+		return
+	}
+	m.authenticationNotified = challenge.ID
+	notifier := m.notifier
+	m.mu.Unlock()
+	if err := notifier.Send("VPN verification required", "Run flexconnect auth respond in a terminal to enter your SMS verification code."); err != nil {
+		systrayLog.Error(fmt.Errorf("authentication notification failed: %w", err))
 	}
 }

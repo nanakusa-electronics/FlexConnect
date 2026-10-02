@@ -174,3 +174,8 @@ func TestConnectionIsAsynchronous(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func (fakeDaemon) AuthenticationFor(appd.Actor) (*types.AuthenticationChallenge, error) {
+	return nil, nil
+}
+func (fakeDaemon) RespondAuthenticationFor(appd.Actor, string, string) error { return nil }

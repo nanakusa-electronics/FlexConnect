@@ -21,6 +21,7 @@ import (
 	"flexconnect/internal/tunflow"
 	"flexconnect/internal/types"
 	"flexconnect/internal/vpn"
+	"github.com/ShanghaitechGeekPie/geektrust/auth"
 	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 	wgtun "github.com/tailscale/wireguard-go/tun"
 )
@@ -106,6 +107,7 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 	}
 	c, err := geektrust.New(geektrust.Options{
 		Compatibility:         req.Profile.ATrustCompatibility,
+		ChallengeHandler:      authenticationHandler(req.Authenticate),
 		ControllerURL:         req.Profile.ServerURL,
 		DeviceID:              id,
 		LoginDomain:           req.Profile.LoginDomain,
@@ -480,4 +482,16 @@ func (b *Backend) TunnelDialer(context.Context) (vpn.TunnelDialer, error) {
 		return nil, errors.New("aTrust session is not connected")
 	}
 	return b.client, nil
+}
+
+func authenticationHandler(handler vpn.AuthenticationHandler) auth.Handler {
+	if handler == nil {
+		return nil
+	}
+	return func(ctx context.Context, challenge auth.Challenge) (string, error) {
+		if challenge.Method != "auth/sms" {
+			return "", &auth.UnsupportedError{Method: challenge.Method}
+		}
+		return handler(ctx, vpn.AuthenticationPrompt{Method: "sms", ExpiresAt: challenge.ExpiresAt})
+	}
 }

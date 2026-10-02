@@ -104,6 +104,9 @@ func runWithTimeouts(parent context.Context, client *local.Client, args []string
 			return err
 		}
 	}
+	if args[0] == "auth" {
+		return runAuthentication(parent, client, args[1:], timeout)
+	}
 	if args[0] == "login" && len(args) == 1 {
 		return runInteractiveLogin(parent, client, cliIn, cliOut, connectTimeout)
 	}
@@ -134,7 +137,7 @@ func commandNeedsDaemon(args []string) bool {
 		}
 	}
 	switch args[0] {
-	case "status", "login", "up", "down", "logs", "diag", "traffic", "watch", "update", "control-mode":
+	case "auth", "status", "login", "up", "down", "logs", "diag", "traffic", "watch", "update", "control-mode":
 		return true
 	case "profile", "route", "proxy":
 		return len(args) > 1
@@ -215,6 +218,8 @@ func runCommand(ctx context.Context, client *local.Client, args []string) error 
 		profiles, _ := client.Profiles(ctx)
 		_, err = io.WriteString(cliOut, formatStatusWithProfiles(status, profiles))
 		return err
+	case "auth":
+		return runAuthentication(ctx, client, args[1:], defaultCommandTimeout)
 	case "login":
 		debugf("handling login")
 		if wantCommandHelp(args[1:]) {
@@ -1631,6 +1636,7 @@ func rootHelpTopic() helpTopic {
 			{Name: "login", Summary: "Create a profile and log in"},
 			{Name: "up", Summary: "Connect the current or named profile"},
 			{Name: "down", Summary: "Disconnect the current VPN session"},
+			{Name: "auth", Summary: "View or answer a pending authentication request"},
 			{Name: "profile", Summary: "List, edit, and switch profiles"},
 			{Name: "route", Summary: "Show or update per-profile route rules"},
 			{Name: "proxy", Summary: "Control the built-in local SOCKS5 proxy"},
@@ -1747,6 +1753,11 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 			Name:        "profile add",
 			Usage:       "flexconnect profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]",
 			Description: "Create a user profile by default. Elevated administrators may create machine profiles with --scope machine.",
+		},
+		"auth": {
+			Name:        "auth",
+			Usage:       "flexconnect auth [status | respond [--response-stdin]]",
+			Description: "View a pending SMS challenge or securely enter its code. Run this in another terminal while connecting; the tray also notifies you. Codes are never accepted as command-line arguments.",
 		},
 		"profile switch": {
 			Name:        "profile switch",

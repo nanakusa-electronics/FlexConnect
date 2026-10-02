@@ -714,6 +714,7 @@ func (s *Service) WatchSince(ctx context.Context, actor Actor, epoch string, sin
 			profiles = append(profiles, publicProfile(profile, actor))
 		}
 	}
+	authentication := s.authenticationForLocked(actor)
 	currentRevision := s.revision
 	currentEpoch := s.epoch
 	s.mu.Unlock()
@@ -729,7 +730,7 @@ func (s *Service) WatchSince(ctx context.Context, actor Actor, epoch string, sin
 	go func() {
 		defer close(out)
 		if needSnapshot {
-			out <- types.Notify{Epoch: currentEpoch, Revision: currentRevision, Event: "snapshot", Status: &status, Profiles: profiles, Time: now()}
+			out <- types.Notify{Epoch: currentEpoch, Revision: currentRevision, Event: "snapshot", Authentication: authentication, Status: &status, Profiles: profiles, Time: now()}
 		} else {
 			for _, event := range replay {
 				out <- event
@@ -747,6 +748,12 @@ func (s *Service) WatchSince(ctx context.Context, actor Actor, epoch string, sin
 
 func (s *Service) notifyForActorLocked(actor Actor, event types.Notify) types.Notify {
 	copy := cloneNotify(event)
+	if copy.Authentication != nil {
+		current := s.authenticationForLocked(actor)
+		if current == nil || current.ID != copy.Authentication.ID {
+			copy.Authentication = nil
+		}
+	}
 	if copy.Status != nil {
 		status := s.statusForActorLocked(actor)
 		copy.Status = &status
@@ -798,6 +805,7 @@ func cloneStatus(status types.Status) types.Status {
 
 func cloneNotify(event types.Notify) types.Notify {
 	copy := event
+	copy.Authentication = cloneAuthentication(event.Authentication)
 	if event.Status != nil {
 		status := cloneStatus(*event.Status)
 		copy.Status = &status

@@ -56,7 +56,7 @@ func TestInteractiveLoginStartsTimeoutAfterInput(t *testing.T) {
 		status := http.StatusOK
 		body := "{}"
 		if req.URL.Path == "/v3/live" {
-			body = `{"status":"ok","version":"2.0.0-dev","api_major":3,"capabilities":["component-health","machine-mode","operations","profile-scope","vpn-providers","structured-errors","watch-replay"]}`
+			body = `{"status":"ok","version":"2.0.0-dev","api_major":3,"capabilities":["authentication","component-health","machine-mode","operations","profile-scope","vpn-providers","structured-errors","watch-replay"]}`
 		} else if req.URL.Path == "/v3/ready" {
 			body = `{"ready":true,"components":[]}`
 		} else if req.URL.Path == "/v3/profiles" && req.Method == http.MethodPost {
@@ -104,7 +104,7 @@ func TestRunChecksDaemonBeforeInteractiveLogin(t *testing.T) {
 		status := http.StatusOK
 		body := "{}"
 		if req.URL.Path == "/v3/live" {
-			body = `{"status":"ok","version":"2.0.0-dev","api_major":3,"capabilities":["component-health","machine-mode","operations","profile-scope","vpn-providers","structured-errors","watch-replay"]}`
+			body = `{"status":"ok","version":"2.0.0-dev","api_major":3,"capabilities":["authentication","component-health","machine-mode","operations","profile-scope","vpn-providers","structured-errors","watch-replay"]}`
 		} else if req.URL.Path == "/v3/ready" {
 			body = `{"ready":true,"components":[]}`
 		} else if req.URL.Path == "/v3/profiles" && req.Method == http.MethodPost {

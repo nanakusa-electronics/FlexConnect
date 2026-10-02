@@ -28,6 +28,8 @@ type requestIDContextKey struct{}
 type actorContextKey struct{}
 
 type Daemon interface {
+	AuthenticationFor(appd.Actor) (*types.AuthenticationChallenge, error)
+	RespondAuthenticationFor(appd.Actor, string, string) error
 	StatusFor(appd.Actor) (types.Status, error)
 	TrafficFor(appd.Actor) (types.TrafficSnapshot, error)
 	LogsFor(appd.Actor) ([]types.LogEntry, error)
@@ -106,6 +108,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v3/status", s.handleStatus)
 	s.mux.HandleFunc("/v3/profiles", s.handleProfiles)
 	s.mux.HandleFunc("/v3/profiles/", s.handleProfile)
+	s.mux.HandleFunc("/v3/authentication", s.handleAuthentication)
+	s.mux.HandleFunc("/v3/authentication/", s.handleAuthenticationResponse)
 	s.mux.HandleFunc("/v3/connection", s.handleConnection)
 	s.mux.HandleFunc("/v3/control-mode", s.handleControlMode)
 	s.mux.HandleFunc("/v3/operations/", s.handleOperation)
@@ -491,6 +495,8 @@ func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) 
 			status = http.StatusConflict
 		case "service_closing", "cleanup_failed", "profile_transaction_pending", "component_unavailable":
 			status = http.StatusServiceUnavailable
+		case "authentication_not_found":
+			status = http.StatusNotFound
 		case "random_source_failed":
 			status = http.StatusInternalServerError
 		default:
