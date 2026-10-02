@@ -935,6 +935,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		authMethod := fs.String("auth-method", "", "authentication method")
 		loginDomain := fs.String("login-domain", "", "aTrust login domain")
 		keystore := fs.String("keystore", "", "import passkey keystore from a file")
+		compatibilityFile := fs.String("atrust-compatibility-file", "", "load aTrust compatibility settings from JSON")
 		scope := fs.String("scope", string(types.ProfileScopeUser), "profile scope: user or machine")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -944,7 +945,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		}
 		positionals := fs.Args()
 		if len(positionals) < 2 || len(positionals) > 3 {
-			return fmt.Errorf("usage: profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]")
+			return fmt.Errorf("usage: profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]")
 		}
 		profile, err := types.NewProfile(positionals[0])
 		if err != nil {
@@ -962,6 +963,13 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 			profile.AuthMethod = types.AuthECNUPasskey
 		}
 		profile.LoginDomain = *loginDomain
+		if *compatibilityFile != "" {
+			settings, err := readATrustCompatibility(*compatibilityFile)
+			if err != nil {
+				return err
+			}
+			profile.ATrustCompatibility = *settings
+		}
 		if len(positionals) > 2 {
 			profile.Username = positionals[2]
 		}
@@ -1002,7 +1010,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 			return printNamedHelp("profile update")
 		}
 		if len(args) < 1 {
-			return fmt.Errorf("usage: profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]")
+			return fmt.Errorf("usage: profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]")
 		}
 		fs := flag.NewFlagSet("profile update", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -1015,6 +1023,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		authMethod := fs.String("auth-method", "", "new authentication method")
 		loginDomain := fs.String("login-domain", "", "new aTrust login domain")
 		keystore := fs.String("keystore", "", "import replacement passkey keystore")
+		compatibilityFile := fs.String("atrust-compatibility-file", "", "replace aTrust compatibility settings from JSON; {} disables all")
 		unsafePassword := fs.String("password", "", "unsupported plaintext password")
 		passwordFile := fs.String("password-file", "", "read new password from a file")
 		passwordStdin := fs.Bool("password-stdin", false, "read new password from standard input")
@@ -1034,7 +1043,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 			return err
 		}
 		if len(fs.Args()) != 0 {
-			return fmt.Errorf("usage: profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]")
+			return fmt.Errorf("usage: profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]")
 		}
 		if *unsafePassword != "" {
 			return errors.New("--password is not supported; use --password-file or --password-stdin")
@@ -1054,6 +1063,13 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 			targetID = current.ID
 		}
 		req := types.ProfileUpdateRequest{}
+		if *compatibilityFile != "" {
+			settings, err := readATrustCompatibility(*compatibilityFile)
+			if err != nil {
+				return err
+			}
+			req.ATrustCompatibility = settings
+		}
 		if *name != "" {
 			req.Name = name
 		}
@@ -1729,7 +1745,7 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 		},
 		"profile add": {
 			Name:        "profile add",
-			Usage:       "flexconnect profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]",
+			Usage:       "flexconnect profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]",
 			Description: "Create a user profile by default. Elevated administrators may create machine profiles with --scope machine.",
 		},
 		"profile switch": {
@@ -1744,7 +1760,7 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 		},
 		"profile update": {
 			Name:  "profile update",
-			Usage: "flexconnect profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]",
+			Usage: "flexconnect profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]",
 			Description: "Update profile fields in place. Runtime-relevant changes reconnect an active profile automatically.\n" +
 				"Use `socks5=true` to enable the built-in VPN-only SOCKS5 proxy for that profile.",
 		},

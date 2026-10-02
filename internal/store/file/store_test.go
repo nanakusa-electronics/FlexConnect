@@ -81,3 +81,29 @@ func TestStateRoundTripRetainsInternalOwnership(t *testing.T) {
 		t.Fatalf("profile = %+v", got.Profiles)
 	}
 }
+
+func TestATrustCompatibilityPersistsAndCanBeDisabled(t *testing.T) {
+	store := New(filepath.Join(t.TempDir(), "state.json"))
+	data := Data{SchemaVersion: CurrentSchemaVersion, Profiles: []types.Profile{{ID: "a", Provider: types.ProviderATrust, ATrustCompatibility: types.ATrustCompatibility{TCPToL3Fallback: true, FallbackGateways: []string{"gateway:441"}}}}}
+	if err := store.Save(data); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.Profiles[0].ATrustCompatibility.TCPToL3Fallback || loaded.Profiles[0].ATrustCompatibility.FallbackGateways[0] != "gateway:441" {
+		t.Fatal("stored compatibility lost")
+	}
+	loaded.Profiles[0].ATrustCompatibility = types.ATrustCompatibility{}
+	if err := store.Save(loaded); err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Profiles[0].ATrustCompatibility.TCPToL3Fallback || len(disabled.Profiles[0].ATrustCompatibility.FallbackGateways) != 0 {
+		t.Fatal("disabled compatibility restored stale settings")
+	}
+}

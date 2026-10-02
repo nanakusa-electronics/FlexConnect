@@ -13,7 +13,7 @@ import (
 	"flexconnect/internal/tunflow"
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
-	geektrust "github.com/nanakusa-electronics/geektrust/client"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 	"github.com/tailscale/wireguard-go/tun"
 	"github.com/tailscale/wireguard-go/tun/netstack"
 	"golang.org/x/net/dns/dnsmessage"

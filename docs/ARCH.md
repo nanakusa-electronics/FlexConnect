@@ -43,6 +43,13 @@ Error. Automatic reconnect retries only classified transient network, DNS, timeo
 failures, with exponential backoff and a maximum of 3 attempts. Machine mode forces that policy and
 remains locked after failure or exhaustion.
 
+Connection intent survives a transient transport loss independently of the connected session.
+One daemon lifecycle owns both physical-path replacement and reconnect backoff; its generation
+and cancel context invalidate obsolete transactions before another can run. Suspend or an
+unavailable physical path pauses attempts. Network recovery (including return to the same path),
+path changes, or Windows resume/unlock can start a fresh bounded retry cycle after exhaustion.
+Manual disconnect and non-transient failures clear intent. Network observers survive transport
+loss and are closed with the backend. See [the lifecycle decision](adr-connection-lifecycle.md).
 
 Each profile explicitly selects `anyconnect/password` or `atrust/ecnu_passkey` or
 `atrust/shanghaitech_passkey`. The daemon switches through one backend factory and one
@@ -50,3 +57,60 @@ active session. aTrust authentication, resource policy, TCP/UDP, and optional pa
 transport live in GeekTrust; FlexConnect owns the OS TUN, route, DNS, and SOCKS5 listener.
 Before switching providers, the daemon closes the old session and restores its network
 objects. A cleanup failure stops the switch. Connection IDs reject late events.
+
+## Network transaction
+
+The network manager persists `network-ownership.json` before applying static or dynamic route/DNS
+state. Cleanup removes only exact objects owned by the connection. If cleanup fails, the journal is
+retained, writes are rejected, readiness fails, and the daemon exits non-zero. The next elevated
+startup restores the journal before constructing the service or opening the API.
+
+Linux uses netlink route add/delete plus systemd-resolved D-Bus, NetworkManager D-Bus, or resolvconf;
+it never overwrites `/etc/resolv.conf`. macOS uses direct route commands and a fixed SystemConfiguration
+dynamic-store key through structured `scutil` stdin. Windows serializes winipcfg state and records
+physical route ownership; Wintun-owned address and DNS state disappears with the adapter handle.
+
+Dynamic split routes are reconciled by one worker. DNS names are canonicalized and matched on label
+boundaries, IPv4 answers and CNAME ownership are validated, TTL is clamped to 30 seconds through one
+hour, shared addresses remain until their last lease expires, and the set is capped at 4096 unique
+addresses. A limit or reconciliation error is visible in health, diagnostics, and watch while the
+existing VPN remains intact.
+
+The aTrust TUN uses a user-space IPv4 stack to forward TCP and UDP to GeekTrust.
+An authorized domain can receive a local Fake-IP; forwarding restores the hostname
+before the SDK checks resource policy. ICMP Echo uses the SDK packet capability and
+reports errors if unsupported. Gateway certificates use system trust when available;
+for private-CA gateways, the daemon stores a per-address public-key pin on first use
+and rejects a changed pin. This first-use trust requires a trusted control-plane response.
+
+## Verification boundary
+
+CI runs unit/integration tests, race-sensitive packages, vet, native builds on Windows/Linux/macOS,
+Windows named-pipe identity integration, a Linux network-namespace route transaction, DNS/scutil
+contracts, platform packaging, and a Docker build. These are automated engineering checks, not
+evidence of a real AnyConnect deployment, real end-user platform networking, or an independent
+security scan.
+
+## TUN packet I/O verification
+
+Native TUN writes follow Tailscale's injection boundary: reserve 16 bytes before
+IP packet data and determine write success from the returned error. The pinned
+wireguard-go Linux implementation returns bytes (including a virtio header when
+active), while Windows/macOS return packet counts. Reads use `BatchSize()` and
+forward every returned segment into independently owned transport payloads.
+User-space netstack devices have a separate zero-offset, single-packet contract.
+
+CI and release validation exercise real Linux TUN packet I/O in an isolated
+network namespace, in addition to fake device and race tests. To run locally
+without changing host routes, compile as the ordinary user and execute in a
+new user/network namespace:
+
+```bash
+GOTOOLCHAIN=go1.26.2 go test -c -o /tmp/flexconnect-tun.test ./internal/anyconnect/tunnel
+unshare -Urn env FLEXCONNECT_TUN_TEST=1 /tmp/flexconnect-tun.test -test.run '^TestNativeLinuxTUNPacketIO$' -test.timeout=15s
+```
+
+Hosts disabling user namespaces require an administrator to run the test with
+`sudo unshare --net` instead. The test is opt-in and does not authenticate to a
+VPN server. Passing it proves native packet handling, not end-to-end AnyConnect
+compatibility with a particular server.

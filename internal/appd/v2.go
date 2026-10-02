@@ -10,7 +10,7 @@ import (
 	"flexconnect/internal/profileio"
 	"flexconnect/internal/types"
 	"flexconnect/internal/vpn"
-	geektrust "github.com/nanakusa-electronics/geektrust/client"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 )
 
 type Actor struct {
@@ -339,6 +339,7 @@ func (s *Service) CreateProfileFor(actor Actor, req types.ProfileCreateRequest) 
 	profile.Provider = req.Provider
 	profile.AuthMethod = req.AuthMethod
 	profile.LoginDomain = req.LoginDomain
+	profile.ATrustCompatibility = req.ATrustCompatibility.Clone()
 	profile.Username = req.Username
 	profile.Group = req.Group
 	profile.Scope = req.Scope
@@ -837,6 +838,7 @@ func cloneNotify(event types.Notify) types.Notify {
 }
 
 func cloneProfile(profile types.Profile) types.Profile {
+	profile.ATrustCompatibility = profile.ATrustCompatibility.Clone()
 	profile.CustomInclude = append([]string(nil), profile.CustomInclude...)
 	profile.CustomExclude = append([]string(nil), profile.CustomExclude...)
 	profile.DNSOverrides = append([]string(nil), profile.DNSOverrides...)

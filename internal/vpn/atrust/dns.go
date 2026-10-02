@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"flexconnect/internal/vpn"
-	geektrust "github.com/nanakusa-electronics/geektrust/client"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 	"golang.org/x/net/dns/dnsmessage"
 )
 

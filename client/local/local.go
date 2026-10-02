@@ -219,7 +219,7 @@ func (c *Client) CreateProfile(ctx context.Context, profile types.Profile, passw
 }
 
 func (c *Client) CreateProfileWithCredential(ctx context.Context, profile types.Profile, password string, credential []byte) (*types.Profile, error) {
-	payload := types.ProfileCreateRequest{Provider: profile.Provider, AuthMethod: profile.AuthMethod, LoginDomain: profile.LoginDomain, Credential: credential, Name: profile.Name, ServerURL: profile.ServerURL, Username: profile.Username, Password: password, Group: profile.Group, Scope: profile.Scope, AcceptServerRoutes: &profile.AcceptServerRoutes, AutoReconnect: profile.AutoReconnect, ApplyDNS: profile.ApplyDNS, CustomInclude: profile.CustomInclude, CustomExclude: profile.CustomExclude, DNSOverrides: profile.DNSOverrides, SOCKS5Enabled: profile.SOCKS5Enabled, SOCKS5Listen: profile.SOCKS5Listen, MTU: profile.MTU}
+	payload := types.ProfileCreateRequest{ATrustCompatibility: profile.ATrustCompatibility.Clone(), Provider: profile.Provider, AuthMethod: profile.AuthMethod, LoginDomain: profile.LoginDomain, Credential: credential, Name: profile.Name, ServerURL: profile.ServerURL, Username: profile.Username, Password: password, Group: profile.Group, Scope: profile.Scope, AcceptServerRoutes: &profile.AcceptServerRoutes, AutoReconnect: profile.AutoReconnect, ApplyDNS: profile.ApplyDNS, CustomInclude: profile.CustomInclude, CustomExclude: profile.CustomExclude, DNSOverrides: profile.DNSOverrides, SOCKS5Enabled: profile.SOCKS5Enabled, SOCKS5Listen: profile.SOCKS5Listen, MTU: profile.MTU}
 	var out types.Profile
 	return &out, c.sendJSON(ctx, http.MethodPost, "/v3/profiles", payload, &out, http.StatusCreated)
 }

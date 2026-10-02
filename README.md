@@ -46,6 +46,8 @@ flexconnect profile list
 3. 创建或选择一个 Profile
 4. 输入服务器、用户名和密码并连接
 
+aTrust 的部署兼容行为由每个 Profile 显式配置，默认关闭。使用 `--atrust-compatibility-file` 导入 JSON，格式和开关说明见 [aTrust 部署兼容配置](docs/atrust-compatibility.md)。
+
 aTrust 使用已注册的 Passkey keystore。先启动守护进程，再用
 `profile add --provider atrust --auth-method ecnu_passkey --keystore <file>`
 导入凭据。导入后请勿让其他程序并发使用源 keystore；源文件不会被自动删除。
@@ -225,4 +227,43 @@ sudo usermod -aG flexconnect "$USER"
 
 ```bash
 go run ./cmd/dist list
+go run ./cmd/dist build --version 2.0.0 linux/amd64/tgz
+go run ./cmd/dist build --version 2.0.0 linux/amd64/deb
+go run ./cmd/dist build --version 2.0.0 linux/amd64/rpm
+go run ./cmd/dist build --version 2.0.0 windows/amd64/zip
+go run ./cmd/dist build --version 2.0.0 windows/amd64/msi
+go run ./cmd/dist build --version 2.0.0 darwin/amd64/pkg
+go run ./cmd/dist build --version 2.0.0 darwin/arm64/pkg
+```
+
+发布 `v2.0.0` 前，需先获得 GeekTrust 上游授权，发布 GeekTrust 库版本，并在 FlexConnect 中固定远程版本。当前本地联调使用未提交的 Go workspace。
+
+## 运行与配置
+
+- `--socket` 用于指定本地 IPC 端点
+- `--timeout` 设置 daemon 健康检查和普通 CLI 操作超时，默认 `15s`
+- `--connect-timeout` 设置登录和 VPN 建链超时，默认 `2m`
+- `--state` 用于指定状态文件
+- `-v` 或 `--verbose` 启用更详细日志
+- Windows 上直接启动 `flexconnectd` 时会自动请求管理员权限
+- 密码通过系统密钥库保存，状态文件只保存非敏感元数据
+- CLI 在执行 daemon 命令前通过 `/v3/live` 和 `/v3/ready` 校验 API major、capabilities 与组件 readiness
+- Linux 本地控制接口通过 `0660 root:flexconnect` Unix socket 提供；Windows 使用受保护的 named pipe，不暴露公网 TCP 端口
+
+## 项目结构
+
+- `assets/`：图标和 Windows 运行时资源
+- `client/`：面向用户的客户端代码
+- `cmd/`：可执行程序入口
+- `docs/`：项目说明文档
+- `internal/`：守护进程、API、路由、IPC、存储、日志和 AnyConnect 实现
+- `release/`：Debian 和 RPM 生命周期脚本
+- `scripts/`：构建、打包、安装和运行脚本
+
+## Credits
+* [Tailscale](https://tailscale.com/) - 架构参考与实现参考
+* [sslcon](https://github.com/tlslink/sslcon) - AnyConnect 协议实现参考
+
+## 验证边界
+
 2.0.0 的三平台原生 CI、安装包和容器验证仍需在固定 GeekTrust 远程版本后完成。实际 VPN/TUN 连接验证须按运行平台分别记录。

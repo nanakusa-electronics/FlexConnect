@@ -21,7 +21,7 @@ import (
 	"flexconnect/internal/tunflow"
 	"flexconnect/internal/types"
 	"flexconnect/internal/vpn"
-	geektrust "github.com/nanakusa-electronics/geektrust/client"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 	wgtun "github.com/tailscale/wireguard-go/tun"
 )
 
@@ -105,6 +105,7 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 		return nil, fmt.Errorf("load aTrust device identity: %w", err)
 	}
 	c, err := geektrust.New(geektrust.Options{
+		Compatibility:         req.Profile.ATrustCompatibility,
 		ControllerURL:         req.Profile.ServerURL,
 		DeviceID:              id,
 		LoginDomain:           req.Profile.LoginDomain,
@@ -436,7 +437,7 @@ func (b *Backend) Traffic() *types.TrafficStats {
 func (b *Backend) ReadServerConfig() map[string]any {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return map[string]any{"provider": "atrust", "gateways": append([]string(nil), b.protocol.Gateways...), "dns": append([]string(nil), b.protocol.DNS...), "resource_count": len(b.protocol.Resources), "capabilities": b.protocol.Capabilities}
+	return map[string]any{"provider": "atrust", "gateways": append([]string(nil), b.protocol.Gateways...), "dns": append([]string(nil), b.protocol.DNS...), "resource_count": len(b.protocol.Resources), "implemented_capabilities": b.protocol.Implemented}
 }
 func (b *Backend) RuntimeDiagnostics() *types.RuntimeDiagnostics {
 	b.mu.Lock()

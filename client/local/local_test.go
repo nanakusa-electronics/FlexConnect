@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -96,5 +97,22 @@ func TestSetControlModeUsesV2Endpoint(t *testing.T) {
 	}
 	if operation.ID != "op-1" {
 		t.Fatalf("operation = %+v", operation)
+	}
+}
+
+func TestCreateProfileSendsCompatibility(t *testing.T) {
+	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var body types.ProfileCreateRequest
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if !body.ATrustCompatibility.TCPToL3Fallback || body.ATrustCompatibility.GatewayServerName != "gateway.example" {
+			t.Fatal("local API dropped compatibility")
+		}
+		return &http.Response{StatusCode: 201, Body: io.NopCloser(strings.NewReader(`{"id":"p"}`)), Header: make(http.Header), Request: req}, nil
+	})}
+	_, err := client.CreateProfile(context.Background(), types.Profile{ATrustCompatibility: types.ATrustCompatibility{TCPToL3Fallback: true, GatewayServerName: "gateway.example"}}, "")
+	if err != nil {
+		t.Fatal(err)
 	}
 }

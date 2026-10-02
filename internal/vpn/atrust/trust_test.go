@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"flexconnect/internal/secret"
-	geektrust "github.com/nanakusa-electronics/geektrust/client"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 )
 
 func TestGatewayPinStorePersistsAndRejectsChange(t *testing.T) {

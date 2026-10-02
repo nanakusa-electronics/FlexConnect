@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -21,7 +22,7 @@ import (
 	"flexconnect/internal/types"
 	"flexconnect/internal/updater"
 	"flexconnect/internal/vpn"
-	geektrust "github.com/nanakusa-electronics/geektrust/client"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 )
 
 var (
@@ -713,6 +714,9 @@ func (s *Service) updateProfile(id string, req types.ProfileUpdateRequest, apply
 	}
 	if req.AuthMethod != nil {
 		profile.AuthMethod = *req.AuthMethod
+	}
+	if req.ATrustCompatibility != nil {
+		profile.ATrustCompatibility = req.ATrustCompatibility.Clone()
 	}
 	if req.LoginDomain != nil {
 		profile.LoginDomain = *req.LoginDomain
@@ -1452,6 +1456,9 @@ func (s *Service) reconnectProfile(ctx context.Context, id, reason string) error
 }
 
 func needsReconnectForProfileUpdate(before, after types.Profile) bool {
+	if !reflect.DeepEqual(before.ATrustCompatibility, after.ATrustCompatibility) {
+		return true
+	}
 	if before.Provider != after.Provider || before.AuthMethod != after.AuthMethod || before.LoginDomain != after.LoginDomain ||
 		before.ServerURL != after.ServerURL ||
 		before.Username != after.Username ||
