@@ -15,6 +15,7 @@ type testBackend struct {
 	connectErr error
 	closeErr   error
 	closed     int
+	disposed   int
 	events     chan vpn.Event
 }
 
@@ -25,7 +26,7 @@ func (b *testBackend) Connect(_ context.Context, req vpn.ConnectRequest) (*types
 	return &types.SessionInfo{ConnectionID: req.ConnectionID}, nil
 }
 func (b *testBackend) Disconnect(context.Context) error { b.closed++; return b.closeErr }
-func (b *testBackend) Close(ctx context.Context) error  { return b.Disconnect(ctx) }
+func (b *testBackend) Close(ctx context.Context) error  { b.disposed++; return b.Disconnect(ctx) }
 func (b *testBackend) SessionInfo() *types.SessionInfo  { return nil }
 func (b *testBackend) Traffic() *types.TrafficStats     { return nil }
 func (b *testBackend) ReadServerConfig() map[string]any { return nil }
@@ -92,5 +93,47 @@ func TestSwitchStopsOnCleanupFailure(t *testing.T) {
 	}
 	if err := selector.Disconnect(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDisconnectRetainsUnderlayEventsUntilClose(t *testing.T) {
+	provider := &testBackend{events: make(chan vpn.Event, 2)}
+	selector := New(map[types.Provider]Factory{types.ProviderATrust: func() vpn.Backend { return provider }})
+	ctx := context.Background()
+	if _, err := selector.Connect(ctx, vpn.ConnectRequest{Profile: types.Profile{Provider: types.ProviderATrust}, ConnectionID: "live"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := selector.Disconnect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if provider.disposed != 0 || selector.current() != provider {
+		t.Fatal("disconnect disposed underlay observer")
+	}
+	provider.events <- vpn.Event{Type: "network_change", ConnectionID: "live"}
+	select {
+	case event := <-selector.Events():
+		if event.Type != "network_change" {
+			t.Fatal(event.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("underlay recovery event lost")
+	}
+	if err := selector.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if provider.disposed != 1 || selector.current() != nil {
+		t.Fatal("shutdown retained observer")
+	}
+}
+
+func TestTransientAttemptRetainsObserver(t *testing.T) {
+	provider := &testBackend{connectErr: errors.New("network offline"), events: make(chan vpn.Event, 1)}
+	selector := New(map[types.Provider]Factory{types.ProviderATrust: func() vpn.Backend { return provider }})
+	defer selector.Close(context.Background())
+	if _, err := selector.Connect(context.Background(), vpn.ConnectRequest{Profile: types.Profile{Provider: types.ProviderATrust}}); err == nil {
+		t.Fatal("expected failure")
+	}
+	if provider.disposed != 0 || selector.current() != provider {
+		t.Fatal("attempt failure disposed observer")
 	}
 }

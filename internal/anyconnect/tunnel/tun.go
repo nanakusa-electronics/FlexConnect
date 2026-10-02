@@ -16,6 +16,7 @@ import (
 	"flexconnect/internal/anyconnect/session"
 	"flexconnect/internal/anyconnect/utils"
 	"flexconnect/internal/osnet"
+	"flexconnect/internal/tunio"
 
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
@@ -23,7 +24,7 @@ import (
 )
 
 // Reserve room for Linux virtio-net headers (10 bytes) and Darwin headers (4 bytes).
-const tunPacketOffset = 16
+const tunPacketOffset = tunio.PacketOffset
 
 var getLocalInterface = osnet.GetLocalInterface
 
@@ -140,23 +141,14 @@ func waitManagerUp(ctx context.Context, manager osnet.Manager, timeout time.Dura
 // 之后由 payloadOutTLSToServer 或 payloadOutDTLSToServer 调整格式，发送给服务端
 func tunToPayloadOut(dev wgtun.Device, cSess *session.ConnSession) {
 	defer base.Info("tun to payloadOut exit")
-	batchSize := dev.BatchSize()
-	if batchSize < 1 {
-		batchSize = 1
-	}
-	bufs := make([][]byte, batchSize)
-	sizes := make([]int, batchSize)
-	for i := range bufs {
-		bufs[i] = make([]byte, payloadBufferSize(cSess.MTU))
-	}
+	reader := tunio.NewReader(dev, payloadBufferSize(cSess.MTU)-tunPacketOffset)
 	for {
 		select {
 		case <-cSess.CloseChan:
 			return
 		default:
 		}
-		clear(sizes)
-		count, err := dev.Read(bufs, sizes, tunPacketOffset)
+		packets, err := reader.Read()
 		if err != nil {
 			select {
 			case <-cSess.CloseChan:
@@ -164,30 +156,18 @@ func tunToPayloadOut(dev wgtun.Device, cSess *session.ConnSession) {
 			default:
 			}
 			cSess.Stat.TUNReadErrors.Inc()
-			cSess.RecordClose("tun_read_error", "tun", err)
-			cSess.Close()
-			return
-		}
-		if count < 0 || count > batchSize {
-			err = fmt.Errorf("TUN read returned count=%d", count)
-		} else {
-			for i := 0; i < count; i++ {
-				if sizes[i] <= 0 || sizes[i] > len(bufs[i])-tunPacketOffset {
-					err = fmt.Errorf("TUN read returned count=%d size=%d", count, sizes[i])
-					break
-				}
+			reason := "tun_read_error"
+			if errors.Is(err, tunio.ErrInvalidRead) {
+				reason = "tun_read_invalid"
 			}
-		}
-		if err != nil {
-			cSess.Stat.TUNReadErrors.Inc()
-			cSess.RecordClose("tun_read_invalid", "tun", err)
+			cSess.RecordClose(reason, "tun", err)
 			cSess.Close()
 			return
 		}
-		for i := 0; i < count; i++ {
+		for _, packet := range packets {
 			pl := getPayloadBuffer(cSess.MTU)
-			copy(pl.Data, bufs[i][tunPacketOffset:tunPacketOffset+sizes[i]])
-			pl.Data = pl.Data[:sizes[i]]
+			copy(pl.Data, packet)
+			pl.Data = pl.Data[:len(packet)]
 			if !sendPayloadToServer(cSess, pl) {
 				putPayloadBuffer(pl)
 				return
@@ -258,11 +238,7 @@ func payloadInToTun(dev wgtun.Device, cSess *session.ConnSession) {
 		//     }
 		// }
 
-		expand := make([]byte, tunPacketOffset+len(pl.Data))
-		copy(expand[tunPacketOffset:], pl.Data)
-		// Match Tailscale native TUN injection: Write counts differ across OS
-		// implementations, so the device error determines write success.
-		_, err = dev.Write([][]byte{expand}, tunPacketOffset)
+		err = tunio.Write(dev, pl.Data)
 
 		if received < 3 {
 			base.Debug("payloadIn to tun", "size", len(pl.Data))

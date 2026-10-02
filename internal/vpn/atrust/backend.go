@@ -94,7 +94,7 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 	if req.Profile.Provider != types.ProviderATrust {
 		return nil, errors.New("aTrust backend requires aTrust profile")
 	}
-	if err := b.Disconnect(ctx); err != nil {
+	if err := b.Close(ctx); err != nil {
 		return nil, fmt.Errorf("release previous aTrust session: %w", err)
 	}
 	if req.Profile.SecretRef == "" {
@@ -212,13 +212,10 @@ func resourcePrefixes(raw string) []netip.Prefix {
 func (b *Backend) Disconnect(ctx context.Context) error {
 	b.mu.Lock()
 	manager := b.manager
-	monitor, cancelMonitor := b.monitor, b.monitorCancel
+	stopTraffic := b.cancel
 	b.mu.Unlock()
-	if cancelMonitor != nil {
-		cancelMonitor()
-	}
-	if monitor != nil {
-		_ = monitor.Close()
+	if stopTraffic != nil {
+		stopTraffic()
 	}
 	if manager != nil {
 		if err := manager.Close(ctx); err != nil {
@@ -228,7 +225,7 @@ func (b *Backend) Disconnect(ctx context.Context) error {
 	b.mu.Lock()
 	c := b.client
 	flows, cancel := b.flows, b.cancel
-	b.client, b.info, b.manager, b.flows, b.cancel, b.monitor, b.monitorCancel, b.protocol = nil, nil, nil, nil, nil, nil, nil, geektrust.Info{}
+	b.client, b.info, b.manager, b.flows, b.cancel, b.protocol = nil, nil, nil, nil, nil, geektrust.Info{}
 	b.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -256,7 +253,18 @@ func (b *Backend) watchFlows(flows *tunflow.Stack, req vpn.ConnectRequest) {
 }
 
 func (b *Backend) watchNetwork(ctx context.Context, monitor osnet.Monitor, req vpn.ConnectRequest) {
-	for change := range monitor.Changes(ctx) {
+	changes := monitor.Changes(ctx)
+	for {
+		var change osnet.UnderlayChange
+		select {
+		case <-ctx.Done():
+			return
+		case next, ok := <-changes:
+			if !ok {
+				return
+			}
+			change = next
+		}
 		event := vpn.Event{Type: "network_change", ConnectionID: req.ConnectionID, AttemptID: req.AttemptID, ProfileID: req.Profile.ID, OwnerID: req.OwnerID,
 			Network: &vpn.NetworkChange{Before: snapshot(change.Before), After: snapshot(change.After), Reasons: change.Reasons, RebindRequired: change.RebindRequired}}
 		if change.Err != nil {
@@ -265,8 +273,8 @@ func (b *Backend) watchNetwork(ctx context.Context, monitor osnet.Monitor, req v
 		select {
 		case b.events <- event:
 		case <-ctx.Done():
+			return
 		}
-		return
 	}
 }
 
@@ -411,8 +419,24 @@ func protectedRoutes(ctx context.Context, controllerURL, credentialRef string, s
 	return protected, controller, nil
 }
 
-func (b *Backend) Close(ctx context.Context) error { return b.Disconnect(ctx) }
-func (b *Backend) Events() <-chan vpn.Event        { return b.events }
+func (b *Backend) Close(ctx context.Context) error {
+	// Keep monitoring after failed network cleanup so ownership is not lost.
+	if err := b.Disconnect(ctx); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	monitor, cancel := b.monitor, b.monitorCancel
+	b.monitor, b.monitorCancel = nil, nil
+	b.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if monitor != nil {
+		return monitor.Close()
+	}
+	return nil
+}
+func (b *Backend) Events() <-chan vpn.Event { return b.events }
 
 func (b *Backend) SessionInfo() *types.SessionInfo {
 	b.mu.Lock()

@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/netip"
@@ -11,9 +12,9 @@ import (
 	"time"
 
 	"flexconnect/internal/tunflow"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
-	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 	"github.com/tailscale/wireguard-go/tun"
 	"github.com/tailscale/wireguard-go/tun/netstack"
 	"golang.org/x/net/dns/dnsmessage"
@@ -252,5 +253,106 @@ func TestResourceRangeIsRoutedPrecisely(t *testing.T) {
 	got = resourcePrefixes("0.0.0.0-255.255.255.255")
 	if len(got) != 1 || got[0].String() != "0.0.0.0/0" {
 		t.Fatalf("full range routes = %v", got)
+	}
+}
+
+type batchTUN struct {
+	*fakeTUN
+	reads int
+}
+
+func (*batchTUN) BatchSize() int { return 2 }
+func (d *batchTUN) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+	if d.reads > 0 {
+		<-d.done
+		return 0, net.ErrClosed
+	}
+	d.reads++
+	if len(bufs) < 2 || len(sizes) < 2 || offset < 10 {
+		return 0, errors.New("native TUN batch or headroom missing")
+	}
+	for i := range 2 {
+		packet := make([]byte, 28)
+		packet[0] = 0x45
+		packet[9] = 1
+		packet[20] = 8
+		packet[27] = byte(i)
+		copy(bufs[i][offset:], packet)
+		sizes[i] = len(packet)
+	}
+	return 2, nil
+}
+func (d *batchTUN) Write(bufs [][]byte, offset int) (int, error) {
+	if offset < 10 {
+		return 0, errors.New("native TUN write headroom missing")
+	}
+	_, err := d.fakeTUN.Write(bufs, offset)
+	return len(bufs[0]), err // Linux may return byte count rather than packet count.
+}
+
+type echoPacket struct{}
+
+func (echoPacket) ExchangePacket(_ context.Context, packet []byte) ([]byte, error) {
+	packet[20] = 0
+	return packet, nil
+}
+
+func TestATrustConsumesEveryNativeTUNSegment(t *testing.T) {
+	dev := &batchTUN{fakeTUN: newFakeTUN()}
+	flow, err := tunflow.New(context.Background(), dev, &echoTunnel{target: make(chan string, 1)}, echoPacket{}, 1399)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer flow.Close()
+	seen := make(map[byte]bool)
+	for range 2 {
+		select {
+		case packet := <-dev.out:
+			seen[packet[27]] = true
+		case err := <-flow.Errors():
+			t.Fatal(err)
+		case <-time.After(time.Second):
+			t.Fatal("TUN batch lost a packet")
+		}
+	}
+	if !seen[0] || !seen[1] {
+		t.Fatal("duplicate or missing segment")
+	}
+}
+
+func TestEmptyUDPDatagramThroughUserStack(t *testing.T) {
+	upstream := &echoTunnel{target: make(chan string, 1)}
+	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
+	fakeIP, err := mapper.allocate("service.example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := newFakeTUN()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	flow, err := tunflow.New(ctx, dev, flowDialer{ctx: ctx, client: upstream, dns: mapper}, nil, 1399)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer flow.Close()
+	ip := &layers.IPv4{Version: 4, IHL: 5, TTL: 64, SrcIP: net.ParseIP("198.19.255.253").To4(), DstIP: net.IP(fakeIP.AsSlice()), Protocol: layers.IPProtocolUDP}
+	udp := &layers.UDP{SrcPort: 44001, DstPort: 4242}
+	if err := udp.SetNetworkLayerForChecksum(ip); err != nil {
+		t.Fatal(err)
+	}
+	buf := gopacket.NewSerializeBuffer()
+	if err := gopacket.SerializeLayers(buf, gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}, ip, udp); err != nil {
+		t.Fatal(err)
+	}
+	dev.in <- buf.Bytes()
+	select {
+	case packet := <-dev.out:
+		decoded := gopacket.NewPacket(packet, layers.LayerTypeIPv4, gopacket.Default)
+		received := decoded.Layer(layers.LayerTypeUDP)
+		if received == nil || len(received.(*layers.UDP).Payload) != 0 {
+			t.Fatal("empty datagram corrupted")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("empty datagram dropped")
 	}
 }

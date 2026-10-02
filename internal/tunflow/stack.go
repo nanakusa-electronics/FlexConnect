@@ -7,11 +7,12 @@ import (
 	"errors"
 	"io"
 	"net"
-	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"flexconnect/internal/tunio"
 
 	"github.com/tailscale/wireguard-go/tun"
 	"gvisor.dev/gvisor/pkg/buffer"
@@ -145,7 +146,7 @@ func (s *Stack) acceptUDP(req *udp.ForwarderRequest) {
 			return
 		}
 		local := gonet.NewUDPConn(s.ip, &wq, ep)
-		s.relay(local, remote)
+		s.relayUDP(local, remote)
 	}()
 }
 
@@ -174,46 +175,84 @@ func (s *Stack) relay(local, remote net.Conn) {
 	<-done
 }
 
+// Datagram relays perform one Write per Read, including an empty datagram.
+// io.Copy is stream-oriented and drops successful zero-byte reads.
+func (s *Stack) relayUDP(local, remote net.Conn) {
+	defer local.Close()
+	defer remote.Close()
+	stop := context.AfterFunc(s.ctx, func() { local.Close(); remote.Close() })
+	defer stop()
+	done := make(chan struct{}, 2)
+	copyDatagrams := func(dst, src net.Conn) {
+		defer func() { done <- struct{}{} }()
+		data := make([]byte, 65535)
+		for {
+			if err := src.SetReadDeadline(time.Now().Add(2 * time.Minute)); err != nil {
+				return
+			}
+			n, err := src.Read(data)
+			if err != nil {
+				return
+			}
+			if err := dst.SetWriteDeadline(time.Now().Add(15 * time.Second)); err != nil {
+				return
+			}
+			if written, err := dst.Write(data[:n]); err != nil || written != n {
+				return
+			}
+		}
+	}
+	go copyDatagrams(remote, local)
+	go copyDatagrams(local, remote)
+	<-done
+	local.Close()
+	remote.Close()
+	<-done
+}
+
 func (s *Stack) readTUN(mtu int) {
 	defer s.loops.Done()
-	offset := 0
-	if runtime.GOOS == "darwin" {
-		offset = 4
-	}
-	buf := make([]byte, mtu+offset+64)
+	reader := tunio.NewReader(s.dev, mtu+64)
 	for {
-		sizes := []int{0}
-		n, err := s.dev.Read([][]byte{buf}, sizes, offset)
+		packets, err := reader.Read()
 		if err != nil {
 			s.report(err)
 			return
 		}
-		if n != 1 || sizes[0] < header.IPv4MinimumSize || sizes[0] > len(buf)-offset {
-			continue
+		for _, packet := range packets {
+			s.handlePacket(packet)
 		}
-		packet := buf[offset : offset+sizes[0]]
-		if packet[0]>>4 != 4 {
-			continue
-		}
-		s.sent.Add(uint64(len(packet)))
-		if packet[9] == 1 {
-			if s.packets != nil && len(packet) >= int(packet[0]&15)*4+8 && packet[int(packet[0]&15)*4] == 8 {
-				s.mu.Lock()
-				if !s.closing {
-					s.flows.Add(1)
-					go s.exchangeICMP(append([]byte(nil), packet...), offset)
-				}
-				s.mu.Unlock()
-			}
-			continue
-		}
-		p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(append([]byte(nil), packet...))})
-		s.link.InjectInbound(ipv4.ProtocolNumber, p)
-		p.DecRef()
 	}
 }
 
-func (s *Stack) exchangeICMP(packet []byte, offset int) {
+func (s *Stack) handlePacket(packet []byte) {
+	if s.ctx.Err() != nil {
+		return
+	}
+	if len(packet) < header.IPv4MinimumSize {
+		return
+	}
+	if packet[0]>>4 != 4 {
+		return
+	}
+	s.sent.Add(uint64(len(packet)))
+	if packet[9] == 1 {
+		if s.packets != nil && len(packet) >= int(packet[0]&15)*4+8 && packet[int(packet[0]&15)*4] == 8 {
+			s.mu.Lock()
+			if !s.closing {
+				s.flows.Add(1)
+				go s.exchangeICMP(append([]byte(nil), packet...))
+			}
+			s.mu.Unlock()
+		}
+		return
+	}
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(append([]byte(nil), packet...))})
+	s.link.InjectInbound(ipv4.ProtocolNumber, p)
+	p.DecRef()
+}
+
+func (s *Stack) exchangeICMP(packet []byte) {
 	defer s.flows.Done()
 	ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
 	defer cancel()
@@ -221,10 +260,8 @@ func (s *Stack) exchangeICMP(packet []byte, offset int) {
 	if err != nil || len(reply) < header.IPv4MinimumSize || reply[0]>>4 != 4 {
 		return
 	}
-	out := make([]byte, offset+len(reply))
-	copy(out[offset:], reply)
 	s.writeMu.Lock()
-	_, err = s.dev.Write([][]byte{out}, offset)
+	err = tunio.Write(s.dev, reply)
 	s.writeMu.Unlock()
 	if err != nil {
 		s.report(err)
@@ -235,10 +272,6 @@ func (s *Stack) exchangeICMP(packet []byte, offset int) {
 
 func (s *Stack) writeTUN() {
 	defer s.loops.Done()
-	offset := 0
-	if runtime.GOOS == "darwin" {
-		offset = 4
-	}
 	for {
 		p := s.link.ReadContext(s.ctx)
 		if p == nil {
@@ -251,10 +284,8 @@ func (s *Stack) writeTUN() {
 		if len(packet) == 0 {
 			continue
 		}
-		out := make([]byte, offset+len(packet))
-		copy(out[offset:], packet)
 		s.writeMu.Lock()
-		_, err := s.dev.Write([][]byte{out}, offset)
+		err := tunio.Write(s.dev, packet)
 		s.writeMu.Unlock()
 		if err != nil {
 			s.report(err)

@@ -68,15 +68,8 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 	go b.forward(next.Events(), gen, stop)
 	info, err := next.Connect(ctx, req)
 	if err != nil {
-		cleanupErr := next.Close(ctx)
-		if cleanupErr == nil {
-			b.mu.Lock()
-			if b.active == next {
-				b.active, b.stop = nil, nil
-				close(stop)
-			}
-			b.mu.Unlock()
-		}
+		// Retain the provider and underlay events while the daemon owns retry.
+		cleanupErr := next.Disconnect(ctx)
 		return nil, errors.Join(err, cleanupErr)
 	}
 	return info, nil
@@ -106,14 +99,21 @@ func (b *Backend) forward(source <-chan vpn.Event, generation uint64, stop <-cha
 	}
 }
 
+// Disconnect stops traffic but preserves the observer used to recover from
+// suspended or lost physical networks. The daemon filters events by intent.
 func (b *Backend) Disconnect(ctx context.Context) error {
-	b.mu.Lock()
-	active := b.active
-	b.mu.Unlock()
+	if active := b.current(); active != nil {
+		return active.Disconnect(ctx)
+	}
+	return nil
+}
+
+func (b *Backend) Close(ctx context.Context) error {
+	active := b.current()
 	if active == nil {
 		return nil
 	}
-	if err := active.Disconnect(ctx); err != nil {
+	if err := active.Close(ctx); err != nil {
 		return err
 	}
 	b.mu.Lock()
@@ -128,10 +128,8 @@ func (b *Backend) Disconnect(ctx context.Context) error {
 	b.mu.Unlock()
 	return nil
 }
-
-func (b *Backend) Close(ctx context.Context) error { return b.Disconnect(ctx) }
-func (b *Backend) Events() <-chan vpn.Event        { return b.events }
-func (b *Backend) current() vpn.Backend            { b.mu.Lock(); defer b.mu.Unlock(); return b.active }
+func (b *Backend) Events() <-chan vpn.Event { return b.events }
+func (b *Backend) current() vpn.Backend     { b.mu.Lock(); defer b.mu.Unlock(); return b.active }
 func (b *Backend) SessionInfo() *types.SessionInfo {
 	if active := b.current(); active != nil {
 		return active.SessionInfo()
