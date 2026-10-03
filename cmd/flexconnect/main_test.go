@@ -18,6 +18,10 @@ import (
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
+func promptLoginRequest(ctx context.Context, in io.Reader, out io.Writer) (types.LoginRequest, error) {
+	return promptAnyConnectLoginRequest(ctx, bufio.NewReader(in), in, out)
+}
+
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
@@ -75,7 +79,7 @@ func TestInteractiveLoginStartsTimeoutAfterInput(t *testing.T) {
 
 	go func() {
 		time.Sleep(40 * time.Millisecond)
-		_, _ = io.WriteString(inputWriter, "https://vpn.example.com\n1\nalice\npassword\ncorp\n")
+		_, _ = io.WriteString(inputWriter, "\nhttps://vpn.example.com\n1\nalice\npassword\ncorp\n")
 		_ = inputWriter.Close()
 	}()
 
@@ -122,7 +126,7 @@ func TestRunChecksDaemonBeforeInteractiveLogin(t *testing.T) {
 	})}
 
 	go func() {
-		_, _ = io.WriteString(inputWriter, "https://vpn.example.com\n1\nalice\npassword\ncorp\n")
+		_, _ = io.WriteString(inputWriter, "\nhttps://vpn.example.com\n1\nalice\npassword\ncorp\n")
 		_ = inputWriter.Close()
 	}()
 

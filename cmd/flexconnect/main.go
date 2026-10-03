@@ -363,13 +363,21 @@ var (
 const loginProbeTimeout = 45 * time.Second
 
 func runInteractiveLogin(parent context.Context, client *local.Client, in io.Reader, out io.Writer, timeout time.Duration) error {
-	req, err := promptLoginRequest(parent, in, out)
+	profile, password, credential, err := promptLoginProfile(parent, in, out)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	if err := client.Login(ctx, req); err != nil {
+	if _, err := client.CreateProfileWithCredential(ctx, profile, password, credential); err != nil {
+		return err
+	}
+	if len(credential) != 0 {
+		if _, err := fmt.Fprintln(out, "Credential imported. Do not use the source keystore concurrently with FlexConnect; it was not deleted."); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out, "Profile saved. Run `flexconnect up` to connect; use `flexconnect auth respond` if SMS verification is requested."); err != nil {
 		return err
 	}
 	return printCurrentStatus(ctx, client)
@@ -540,8 +548,7 @@ func readKeystore(path string) ([]byte, error) {
 	return data, nil
 }
 
-func promptLoginRequest(ctx context.Context, in io.Reader, out io.Writer) (types.LoginRequest, error) {
-	reader := bufio.NewReader(in)
+func promptAnyConnectLoginRequest(ctx context.Context, reader *bufio.Reader, in io.Reader, out io.Writer) (types.LoginRequest, error) {
 
 	var groups []string
 	var server string
@@ -1675,7 +1682,7 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 		"login": {
 			Name:        "login",
 			Usage:       "flexconnect login [--server <url> --user <username> (--password-file <path> | --password-stdin) --name <profile-name> --group <group>]",
-			Description: "Create or update a profile, log in, and keep it as the last used profile. With no flags, prompts interactively: the server URL is connection-tested to list the available user groups, then group, username, and password are verified against the server (password input echoes '*') before the profile is saved.",
+			Description: "Create a profile. With no flags, choose AnyConnect or aTrust. AnyConnect verifies the server, group, username, and password before saving. aTrust imports an ECNU or ShanghaiTech Passkey keystore, with optional login domain and deployment compatibility settings. Run up to connect; use auth respond if SMS verification is requested. Flags configure AnyConnect password login.",
 			Examples: []string{
 				"flexconnect login",
 				"flexconnect login --server https://vpn.example.com --user alice --password-file ./secrets/flexconnect_password --name corp",

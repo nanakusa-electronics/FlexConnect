@@ -57,9 +57,13 @@ flexconnect profile list
 
 aTrust 的部署兼容行为由每个 Profile 显式配置，默认关闭。使用 `--atrust-compatibility-file` 导入 JSON，格式和开关说明见 [aTrust 部署兼容配置](docs/atrust-compatibility.md)。
 
-aTrust 使用已注册的 Passkey keystore。先启动守护进程，再用
-`profile add --provider atrust --auth-method ecnu_passkey --keystore <file>`
-导入凭据。导入后请勿让其他程序并发使用源 keystore；源文件不会被自动删除。
+aTrust 使用已注册的 Passkey keystore。先启动守护进程，再运行 `flexconnect login`，
+在向导中选择 aTrust 和 ECNU/上海科大认证方式，填写服务器、导入 keystore，
+按需设置登录域和部署兼容 JSON。用户名可留空，由 daemon 从 keystore 读取。
+也可使用 `profile add --provider atrust --auth-method ecnu_passkey --keystore <file>`。
+导入后请勿让其他程序并发使用源 keystore；源文件不会被自动删除。
+向导保存配置后，用 `flexconnect up` 连接；若请求短信验证码，用 `flexconnect auth respond` 提交。
+AnyConnect 向导仍会探测分组并验证密码。带参数的 `login` 仍用于 AnyConnect。
 
 连接成功后，CLI 与托盘会显示当前状态、VPN 地址、DNS 和路由摘要。
 
@@ -149,7 +153,7 @@ FLEXCONNECT_SERVER=https://vpn.example.com FLEXCONNECT_USERNAME=alice docker com
 
 ### 发布到 GitHub Packages
 
-仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0-beta.2`）以及 `<major>`、`<major>.<minor>`。
+仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0-beta.3`）以及 `<major>`、`<major>.<minor>`。
 
 从 GHCR 发布镜像（可选）：
 
@@ -236,13 +240,13 @@ sudo usermod -aG flexconnect "$USER"
 
 ```bash
 go run ./cmd/dist list
-go run ./cmd/dist build --version 2.0.0-beta.2 linux/amd64/tgz
-go run ./cmd/dist build --version 2.0.0-beta.2 linux/amd64/deb
-go run ./cmd/dist build --version 2.0.0-beta.2 linux/amd64/rpm
-go run ./cmd/dist build --version 2.0.0-beta.2 windows/amd64/zip
-go run ./cmd/dist build --version 2.0.0-beta.2 windows/amd64/msi
-go run ./cmd/dist build --version 2.0.0-beta.2 darwin/amd64/pkg
-go run ./cmd/dist build --version 2.0.0-beta.2 darwin/arm64/pkg
+go run ./cmd/dist build --version 2.0.0-beta.3 linux/amd64/tgz
+go run ./cmd/dist build --version 2.0.0-beta.3 linux/amd64/deb
+go run ./cmd/dist build --version 2.0.0-beta.3 linux/amd64/rpm
+go run ./cmd/dist build --version 2.0.0-beta.3 windows/amd64/zip
+go run ./cmd/dist build --version 2.0.0-beta.3 windows/amd64/msi
+go run ./cmd/dist build --version 2.0.0-beta.3 darwin/amd64/pkg
+go run ./cmd/dist build --version 2.0.0-beta.3 darwin/arm64/pkg
 ```
 
 本 beta 使用自维护 GeekTrust fork，固定提交 `f383a7b6ba33cafe89c529ebea6ebf57fd8ce88a`（`github.com/nanakusa-electronics/geektrust`），通过 Go module replace 下载，不依赖本地 workspace。它属于预览版本，不替代 1.3.x 稳定版。
