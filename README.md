@@ -140,7 +140,7 @@ FLEXCONNECT_SERVER=https://vpn.example.com FLEXCONNECT_USERNAME=alice docker com
 
 ### 发布到 GitHub Packages
 
-仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0`）以及 `<major>`、`<major>.<minor>`。
+仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0-beta.1`）以及 `<major>`、`<major>.<minor>`。
 
 从 GHCR 发布镜像（可选）：
 
@@ -227,16 +227,16 @@ sudo usermod -aG flexconnect "$USER"
 
 ```bash
 go run ./cmd/dist list
-go run ./cmd/dist build --version 2.0.0 linux/amd64/tgz
-go run ./cmd/dist build --version 2.0.0 linux/amd64/deb
-go run ./cmd/dist build --version 2.0.0 linux/amd64/rpm
-go run ./cmd/dist build --version 2.0.0 windows/amd64/zip
-go run ./cmd/dist build --version 2.0.0 windows/amd64/msi
-go run ./cmd/dist build --version 2.0.0 darwin/amd64/pkg
-go run ./cmd/dist build --version 2.0.0 darwin/arm64/pkg
+go run ./cmd/dist build --version 2.0.0-beta.1 linux/amd64/tgz
+go run ./cmd/dist build --version 2.0.0-beta.1 linux/amd64/deb
+go run ./cmd/dist build --version 2.0.0-beta.1 linux/amd64/rpm
+go run ./cmd/dist build --version 2.0.0-beta.1 windows/amd64/zip
+go run ./cmd/dist build --version 2.0.0-beta.1 windows/amd64/msi
+go run ./cmd/dist build --version 2.0.0-beta.1 darwin/amd64/pkg
+go run ./cmd/dist build --version 2.0.0-beta.1 darwin/arm64/pkg
 ```
 
-发布 `v2.0.0` 前，需先获得 GeekTrust 上游授权，发布 GeekTrust 库版本，并在 FlexConnect 中固定远程版本。当前本地联调使用未提交的 Go workspace。
+本 beta 使用自维护 GeekTrust fork，固定提交 `f383a7b6ba33cafe89c529ebea6ebf57fd8ce88a`（`github.com/nanakusa-electronics/geektrust`），通过 Go module replace 下载，不依赖本地 workspace。它属于预览版本，不替代 1.3.x 稳定版。
 
 ## 运行与配置
 
@@ -266,7 +266,7 @@ go run ./cmd/dist build --version 2.0.0 darwin/arm64/pkg
 
 ## 验证边界
 
-2.0.0 的三平台原生 CI、安装包和容器验证仍需在固定 GeekTrust 远程版本后完成。实际 VPN/TUN 连接验证须按运行平台分别记录。
+beta 的 CI 和发布工作流使用 `GOWORK=off`，覆盖三平台测试、原生 TUN 流量检查、安装包和容器构建。实际企业 VPN、短信认证和休眠恢复仍需在目标环境验证。
 
 ### Additional authentication in 2.0
 

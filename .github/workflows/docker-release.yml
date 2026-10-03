@@ -86,14 +86,16 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_NAME }}
+          flavor: latest=false
           tags: |
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
             type=semver,pattern={{version}},event=tag
-            type=semver,pattern={{major}},event=tag
-            type=semver,pattern={{major}}.{{minor}},event=tag
+            type=semver,pattern={{major}},event=tag,enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}}.{{minor}},event=tag,enable=${{ !contains(github.ref_name, '-') }}
             type=semver,pattern={{version}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
-            type=semver,pattern={{major}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
+            type=semver,pattern={{major}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' && !contains(github.event.inputs.image-tag, '-') }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' && !contains(github.event.inputs.image-tag, '-') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' && !contains(github.event.inputs.image-tag, '-') }}
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag == '' }}
 
       - name: Derive binary version
