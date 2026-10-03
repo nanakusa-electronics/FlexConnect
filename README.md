@@ -23,6 +23,15 @@ FlexConnect 2.0 是一个可选择 AnyConnect 或 aTrust 的 VPN 客户端，提
 
 ## 快速开始
 
+### 从 1.3.x 升级
+
+升级前备份现有状态配置。2.0 守护进程启动时自动将 1.3.x 的 schema 2
+转换为 schema 3：旧 Profile 使用 AnyConnect/password，保留配置 ID、所属用户、
+选择项、控制模式、路由、DNS 和密码引用，无需重新录入已有密码。
+迁移不会更换密码存储后端。迁移成功后原子写回状态文件；不合法配置或写入失败
+会阻止启动。迁移是单向的，退回 1.3.x 需要恢复升级前的状态备份。
+CLI 和托盘须一起升级到 2.0。
+
 ### 启动守护进程和托盘
 
 ```bash
@@ -140,7 +149,7 @@ FLEXCONNECT_SERVER=https://vpn.example.com FLEXCONNECT_USERNAME=alice docker com
 
 ### 发布到 GitHub Packages
 
-仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0-beta.1`）以及 `<major>`、`<major>.<minor>`。
+仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0-beta.2`）以及 `<major>`、`<major>.<minor>`。
 
 从 GHCR 发布镜像（可选）：
 
@@ -227,13 +236,13 @@ sudo usermod -aG flexconnect "$USER"
 
 ```bash
 go run ./cmd/dist list
-go run ./cmd/dist build --version 2.0.0-beta.1 linux/amd64/tgz
-go run ./cmd/dist build --version 2.0.0-beta.1 linux/amd64/deb
-go run ./cmd/dist build --version 2.0.0-beta.1 linux/amd64/rpm
-go run ./cmd/dist build --version 2.0.0-beta.1 windows/amd64/zip
-go run ./cmd/dist build --version 2.0.0-beta.1 windows/amd64/msi
-go run ./cmd/dist build --version 2.0.0-beta.1 darwin/amd64/pkg
-go run ./cmd/dist build --version 2.0.0-beta.1 darwin/arm64/pkg
+go run ./cmd/dist build --version 2.0.0-beta.2 linux/amd64/tgz
+go run ./cmd/dist build --version 2.0.0-beta.2 linux/amd64/deb
+go run ./cmd/dist build --version 2.0.0-beta.2 linux/amd64/rpm
+go run ./cmd/dist build --version 2.0.0-beta.2 windows/amd64/zip
+go run ./cmd/dist build --version 2.0.0-beta.2 windows/amd64/msi
+go run ./cmd/dist build --version 2.0.0-beta.2 darwin/amd64/pkg
+go run ./cmd/dist build --version 2.0.0-beta.2 darwin/arm64/pkg
 ```
 
 本 beta 使用自维护 GeekTrust fork，固定提交 `f383a7b6ba33cafe89c529ebea6ebf57fd8ce88a`（`github.com/nanakusa-electronics/geektrust`），通过 Go module replace 下载，不依赖本地 workspace。它属于预览版本，不替代 1.3.x 稳定版。

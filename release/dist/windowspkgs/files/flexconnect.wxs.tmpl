@@ -1,6 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="FlexConnect" Manufacturer="2018wzh" Version="{{ .Version }}" UpgradeCode="{{ .UpgradeCode }}">
-    <MajorUpgrade DowngradeErrorMessage="A newer version of FlexConnect is already installed." />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of FlexConnect is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="FlexIcon.ico" SourceFile="{{ .IconPath }}" />
     <Property Id="ARPPRODUCTICON" Value="FlexIcon.ico" />

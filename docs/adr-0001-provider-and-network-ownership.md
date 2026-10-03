@@ -3,8 +3,9 @@
 Status: Accepted for FlexConnect 2.0 development.
 
 The local API is `/v3` and persisted state is schema 3. Profiles explicitly
-select a provider and authentication method. Older API paths and state schemas
-are rejected, and old state files are not overwritten. The CLI and tray use the
+select a provider and authentication method. Older API paths are rejected.
+Schema 2 migration is defined in [ADR 0005](adr-0005-state-migration.md).
+The CLI and tray use the
 same typed local client and continue to select one active profile.
 
 The daemon alone owns system TUN, routes, DNS, proxy listener, connection

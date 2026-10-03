@@ -160,8 +160,25 @@ func (s *Service) load() error {
 		return err
 	}
 	s.health["store"] = types.ComponentStatus{Name: "store", Ready: true}
+	migrated := data.SchemaVersion == 2
+	if migrated {
+		for i := range data.Profiles {
+			data.Profiles[i].Provider = types.ProviderAnyConnect
+			data.Profiles[i].AuthMethod = types.AuthPassword
+		}
+		if data.Intent != nil && data.Intent.NewProfile != nil {
+			data.Intent.NewProfile.Provider = types.ProviderAnyConnect
+			data.Intent.NewProfile.AuthMethod = types.AuthPassword
+			profile := profileio.NormalizeProfile(*data.Intent.NewProfile)
+			if err := profileio.ValidateProfile(profile); err != nil {
+				return fmt.Errorf("invalid migrating profile transaction: %w", err)
+			}
+			data.Intent.NewProfile = &profile
+		}
+		data.SchemaVersion = storefile.CurrentSchemaVersion
+	}
 	if data.SchemaVersion != storefile.CurrentSchemaVersion {
-		return fmt.Errorf("unsupported state schema version %d; FlexConnect 2.0.0 requires schema version %d and does not migrate older state", data.SchemaVersion, storefile.CurrentSchemaVersion)
+		return fmt.Errorf("unsupported state schema version %d; expected schema 2 or %d", data.SchemaVersion, storefile.CurrentSchemaVersion)
 	}
 	appdLog.Printf("loaded state current_id=%s total_profiles=%d", data.CurrentProfileID, len(data.Profiles))
 	s.profiles = data.Profiles
@@ -215,6 +232,12 @@ func (s *Service) load() error {
 	s.status.ControlMode = s.controlMode
 	if err := s.recoverIntentLocked(); err != nil {
 		return fmt.Errorf("recover profile transaction: %w", err)
+	}
+	if migrated {
+		if err := s.persist(); err != nil {
+			return fmt.Errorf("persist schema 2 to 3 migration: %w", err)
+		}
+		appdLog.Printf("migrated state schema 2 to 3")
 	}
 	appdDebugf("state loaded current=%s profile_count=%d", s.currentID, len(s.profiles))
 	return nil
