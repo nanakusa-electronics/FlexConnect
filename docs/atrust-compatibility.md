@@ -3,6 +3,17 @@
 每个 aTrust Profile 独立保存 `atrust_compatibility`，默认所有兜底关闭。
 选项不按学校或控制器域名自动开启。AnyConnect Profile 拒绝非空 aTrust 选项。
 
+运行 `flexconnect login` 并选择 aTrust 后，属性步骤提供三个入口：
+
+- 保留默认值：跳过全部属性设置，部署兼容选项保持关闭。
+- 交互配置：分别选择是否配置网络属性和部署兼容选项。网络属性包括接受服务器路由、
+  应用系统 DNS、自动重连、自定义包含/排除路由、SOCKS5 和 MTU。
+  部署兼容选项覆盖下表全部字段，未主动启用的回退保持关闭。
+- 导入兼容 JSON：读取下述 JSON 配置，网络属性保持默认值。
+
+布尔选项和 MTU 显示当前默认值，按 Enter 保持默认；列表使用逗号分隔。
+无效路由、网关、TLS 域名或进程元数据会阻止保存。
+
 创建 JSON 配置，例如 `atrust-compatibility.json`：
 
 ```json

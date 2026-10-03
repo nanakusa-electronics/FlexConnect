@@ -48,7 +48,11 @@ func TestInteractiveATrustLoginImportsCredential(t *testing.T) {
 			if auth == "shanghaitech_passkey" {
 				choice = "ShanghaiTech Passkey"
 			}
-			input := strings.NewReader("atrust\n" + choice + "\nhttps://vpn.example.com\n\n\"" + path + "\"\ncampus-domain\n" + compatibility + "\ncampus\n")
+			attributes := "3\n" + compatibility + "\n"
+			if auth == "ecnu_passkey" {
+				attributes = strings.Join([]string{"2", "yes", "no", "no", "yes", "10.0.0.0/8", "192.168.0.0/16", "yes", "127.0.0.1:1081", "1400", "yes", "app-id", "gateway.example:441", "gateway.example", "yes", "yes", "yes", "client.exe", "Windows", "C:\\client.exe", ""}, "\n")
+			}
+			input := strings.NewReader("atrust\n" + choice + "\nhttps://vpn.example.com\n\n\"" + path + "\"\ncampus-domain\n" + attributes + "campus\n")
 			var output strings.Builder
 			oldOut := cliOut
 			cliOut = &output
@@ -58,6 +62,11 @@ func TestInteractiveATrustLoginImportsCredential(t *testing.T) {
 			}
 			if posts != 1 || payload.Provider != types.ProviderATrust || payload.AuthMethod != types.AuthMethod(auth) || string(payload.Credential) != string(credential) || payload.Password != "" || payload.Scope != types.ProfileScopeUser || payload.Username != "" || payload.Name != "campus" || payload.ServerURL != "https://vpn.example.com" || payload.LoginDomain != "campus-domain" || !payload.ATrustCompatibility.TCPToL3Fallback {
 				t.Fatal("wizard did not submit the selected provider, credential, or settings")
+			}
+			if auth == "ecnu_passkey" {
+				if payload.AcceptServerRoutes == nil || *payload.AcceptServerRoutes || types.BoolValue(payload.ApplyDNS, true) || !types.BoolValue(payload.AutoReconnect, false) || !payload.SOCKS5Enabled || payload.SOCKS5Listen != "127.0.0.1:1081" || payload.MTU != 1400 || len(payload.CustomInclude) != 1 || payload.CustomInclude[0] != "10.0.0.0/8" || len(payload.CustomExclude) != 1 || payload.CustomExclude[0] != "192.168.0.0/16" || payload.ATrustCompatibility.FallbackAppID != "app-id" || len(payload.ATrustCompatibility.FallbackGateways) != 1 || payload.ATrustCompatibility.GatewayServerName != "gateway.example" || !payload.ATrustCompatibility.MissingGatewayGroupFallback || payload.ATrustCompatibility.ProcessIdentity == nil || payload.ATrustCompatibility.ProcessIdentity.Name != "client.exe" {
+					t.Fatal("interactive attributes were not included in the API request")
+				}
 			}
 			if len(*seen) != 0 || strings.Contains(output.String(), "Verifying login") || strings.Contains(output.String(), string(credential)) {
 				t.Fatal("aTrust wizard probed AnyConnect or exposed credential data")

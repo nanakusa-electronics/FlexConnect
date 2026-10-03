@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"net/url"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -373,7 +374,13 @@ func routePrefixes(profile types.Profile, server []string, protected []netip.Pre
 	include, _ := osnet.ParsePrefixes(merged.Include)
 	exclude, _ := osnet.ParsePrefixes(merged.Exclude)
 	exclude = append(exclude, protected...)
-	return include, exclude
+	// Windows owns the limited-broadcast host route on each interface. Do not
+	// install or track it as a VPN route. Broader prefixes remain intact: the
+	// system's /32 broadcast route takes precedence over them.
+	isBroadcast := func(prefix netip.Prefix) bool {
+		return prefix == netip.PrefixFrom(netip.AddrFrom4([4]byte{255, 255, 255, 255}), 32)
+	}
+	return slices.DeleteFunc(include, isBroadcast), slices.DeleteFunc(exclude, isBroadcast)
 }
 
 func protectedRoutes(ctx context.Context, controllerURL, credentialRef string, secrets secret.Store, gateways []string) ([]netip.Prefix, netip.Addr, error) {

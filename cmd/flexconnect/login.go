@@ -68,16 +68,8 @@ func promptLoginProfile(ctx context.Context, in io.Reader, out io.Writer) (types
 	if err != nil {
 		return types.Profile{}, "", nil, err
 	}
-	path, err := promptValue(reader, out, "aTrust compatibility JSON file", true)
-	if err != nil {
+	if err := promptATrustAttributes(ctx, reader, out, &profile); err != nil {
 		return types.Profile{}, "", nil, err
-	}
-	if path != "" {
-		settings, err := readATrustCompatibility(strings.Trim(path, "\""))
-		if err != nil {
-			return types.Profile{}, "", nil, err
-		}
-		profile.ATrustCompatibility = *settings
 	}
 	profile.Name, err = promptValue(reader, out, "Profile name", true)
 	return profile, "", credential, err
