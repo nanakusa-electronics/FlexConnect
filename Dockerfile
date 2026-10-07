@@ -2,7 +2,7 @@
 
 FROM golang:1.26.2-bookworm AS build
 
-ARG VERSION=2.0.0-beta.4
+ARG VERSION=2.0.0
 
 ENV GOWORK=off
 

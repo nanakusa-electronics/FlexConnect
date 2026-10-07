@@ -6,6 +6,7 @@ require (
 	fyne.io/systray v1.12.1
 	github.com/Masterminds/semver/v3 v3.1.1
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/ShanghaitechGeekPie/geektrust v0.2.1-rc1.0.20261005162309-5bb65f90b45a
 	github.com/elastic/go-sysinfo v1.15.4
 	github.com/gen2brain/beeep v0.11.2
 	github.com/godbus/dbus/v5 v5.2.2
@@ -36,7 +37,6 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Masterminds/sprig v2.22.0+incompatible // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20210512092938-c05353c2d58c // indirect
-	github.com/ShanghaitechGeekPie/geektrust v0.0.0-20261002181457-f383a7b6ba33
 	github.com/acomagu/bufpipe v1.0.3 // indirect
 	github.com/blakesmith/ar v0.0.0-20190502131153-809d4375e1fb // indirect
 	github.com/cavaliercoder/go-cpio v0.0.0-20180626203310-925f9528c45e // indirect
@@ -82,5 +82,3 @@ require (
 	gvisor.dev/gvisor v0.0.0-20230927004350-cbd86285d259
 	howett.net/plist v1.0.1 // indirect
 )
-
-replace github.com/ShanghaitechGeekPie/geektrust => github.com/nanakusa-electronics/geektrust v0.0.0-20261002181457-f383a7b6ba33
