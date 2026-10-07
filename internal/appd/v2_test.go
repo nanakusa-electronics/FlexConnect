@@ -76,6 +76,7 @@ func TestMachineProfileCreationDoesNotCorruptPerUserSelection(t *testing.T) {
 	}
 	defer service.Close(context.Background())
 	_, err = service.CreateProfileFor(SystemActor(), types.ProfileCreateRequest{
+		Provider: types.ProviderAnyConnect, AuthMethod: types.AuthPassword,
 		Name: "unattended", ServerURL: "https://vpn.example.test", Username: "machine",
 		Password: "secret", Scope: types.ProfileScopeMachine, MTU: 1406,
 	})
@@ -193,7 +194,7 @@ func TestRandomFailureStopsDaemonProfileAndConnectionCreation(t *testing.T) {
 	newID = originalID
 	service := newTestService(t, newFakeBackend(), testProfile("p1", false))
 	newProfile = func(string) (types.Profile, error) { return types.Profile{}, randomErr }
-	if _, err := service.CreateProfileFor(SystemActor(), types.ProfileCreateRequest{Name: "new", Password: "test-password"}); !errors.Is(err, randomErr) {
+	if _, err := service.CreateProfileFor(SystemActor(), types.ProfileCreateRequest{Provider: types.ProviderAnyConnect, AuthMethod: types.AuthPassword, Name: "new", Password: "test-password"}); !errors.Is(err, randomErr) {
 		t.Fatalf("CreateProfileFor error = %v", err)
 	}
 	newProfile = originalProfile

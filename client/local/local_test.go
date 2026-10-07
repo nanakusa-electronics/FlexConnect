@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -19,7 +20,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestUpdateProfileReturnsAsyncOperation(t *testing.T) {
 	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodPatch || req.URL.EscapedPath() != "/v2/profiles/profile-1" {
+		if req.Method != http.MethodPatch || req.URL.EscapedPath() != "/v3/profiles/profile-1" {
 			t.Fatalf("request = %s %s", req.Method, req.URL.EscapedPath())
 		}
 		return &http.Response{
@@ -58,7 +59,7 @@ func TestHealthRejectsIncompatibleAPI(t *testing.T) {
 
 func TestReadyDecodesComponentReasonsFrom503(t *testing.T) {
 	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.Path != "/v2/ready" {
+		if req.URL.Path != "/v3/ready" {
 			t.Fatalf("path = %s", req.URL.Path)
 		}
 		return &http.Response{
@@ -78,7 +79,7 @@ func TestReadyDecodesComponentReasonsFrom503(t *testing.T) {
 
 func TestSetControlModeUsesV2Endpoint(t *testing.T) {
 	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodPut || req.URL.Path != "/v2/control-mode" {
+		if req.Method != http.MethodPut || req.URL.Path != "/v3/control-mode" {
 			t.Fatalf("request = %s %s", req.Method, req.URL.Path)
 		}
 		body, err := io.ReadAll(req.Body)
@@ -96,5 +97,22 @@ func TestSetControlModeUsesV2Endpoint(t *testing.T) {
 	}
 	if operation.ID != "op-1" {
 		t.Fatalf("operation = %+v", operation)
+	}
+}
+
+func TestCreateProfileSendsCompatibility(t *testing.T) {
+	client := &Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var body types.ProfileCreateRequest
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if !body.ATrustCompatibility.TCPToL3Fallback || body.ATrustCompatibility.GatewayServerName != "gateway.example" {
+			t.Fatal("local API dropped compatibility")
+		}
+		return &http.Response{StatusCode: 201, Body: io.NopCloser(strings.NewReader(`{"id":"p"}`)), Header: make(http.Header), Request: req}, nil
+	})}
+	_, err := client.CreateProfile(context.Background(), types.Profile{ATrustCompatibility: types.ATrustCompatibility{TCPToL3Fallback: true, GatewayServerName: "gateway.example"}}, "")
+	if err != nil {
+		t.Fatal(err)
 	}
 }

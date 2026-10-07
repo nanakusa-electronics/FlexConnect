@@ -18,9 +18,11 @@ func (e *ValidationError) Error() string { return e.Err.Error() }
 func (e *ValidationError) Unwrap() error { return e.Err }
 
 func NormalizeProfile(profile types.Profile) types.Profile {
+	profile.ATrustCompatibility = profile.ATrustCompatibility.Clone()
 	profile.Name = strings.TrimSpace(profile.Name)
 	profile.Username = strings.TrimSpace(profile.Username)
 	profile.Group = strings.TrimSpace(profile.Group)
+	profile.LoginDomain = strings.TrimSpace(profile.LoginDomain)
 	profile.ServerURL = NormalizeServerURL(profile.ServerURL)
 	profile.CustomInclude = normalizeList(profile.CustomInclude)
 	profile.CustomExclude = normalizeList(profile.CustomExclude)
@@ -74,6 +76,28 @@ func ValidateProfile(profile types.Profile) error {
 }
 
 func validateProfile(profile types.Profile) error {
+	switch profile.Provider {
+	case types.ProviderAnyConnect:
+		compatibility := profile.ATrustCompatibility
+		if compatibility.ProcessIdentity != nil || compatibility.FallbackAppID != "" || len(compatibility.FallbackGateways) != 0 || compatibility.GatewayServerName != "" || compatibility.TCPToL3Fallback || compatibility.MissingGatewayGroupFallback {
+			return errors.New("aTrust compatibility settings require the aTrust provider")
+		}
+		if profile.AuthMethod != types.AuthPassword {
+			return errors.New("AnyConnect requires password authentication")
+		}
+	case types.ProviderATrust:
+		if err := profile.ATrustCompatibility.Validate(); err != nil {
+			return err
+		}
+		if profile.AuthMethod != types.AuthECNUPasskey && profile.AuthMethod != types.AuthShanghaiTechPasskey {
+			return errors.New("aTrust requires a supported passkey authentication method")
+		}
+	default:
+		return fmt.Errorf("unknown VPN provider %q", profile.Provider)
+	}
+	if err := validateText("login domain", profile.LoginDomain, false, 256); err != nil {
+		return err
+	}
 	if err := validateText("profile name", profile.Name, true, 128); err != nil {
 		return err
 	}

@@ -1,12 +1,12 @@
-# FlexConnect 1.3 Architecture
+# FlexConnect 2.0 Architecture
 
 ## Control plane
 
 `flexconnectd` is the only process allowed to own VPN, TUN, route, DNS, or SOCKS5 state. The CLI
 and tray use the typed client in `client/local` over a Unix socket or Windows named pipe. The local
-HTTP surface is API major 2 only; API v1 and the browser console are intentionally absent.
+HTTP surface is API major 3 only; older API versions and the browser console are absent.
 
-`GET /v2/live` proves only that the process and HTTP handler are alive. `GET /v2/ready` reports the
+`GET /v3/live` proves only that the process and HTTP handler are alive. `GET /v3/ready` reports the
 component registry and returns 503 while a required component cannot accept new operations. Every
 error response uses a stable code, sanitized message, request ID, and retryable flag.
 
@@ -17,8 +17,8 @@ read-only, redacted status and cannot change or stop the connection.
 
 ## State and operations
 
-State schema 2 stores profiles, per-SID selections, control mode, and durable profile/secret intent.
-There is no schema migration from the pre-1.3 format. Missing ownership or scope is a startup error,
+State schema 3 stores profiles, per-SID selections, control mode, and durable profile/secret intent.
+There is no state migration. Missing ownership, scope, provider, or authentication method is a startup error,
 and the old file is not modified.
 
 Profile and secret mutation follows a persisted intent transaction: validate, write intent, create
@@ -37,7 +37,7 @@ Blocking backend work does not hold the backend publication mutex. Only the curr
 commit a result. Disconnect, switch, active update, delete, repair, shutdown, and API operations are
 serialized at the supervisor boundary, and stale backend events are rejected by connection identity.
 
-Connected is published only after CSTP/TLS, offered DTLS, TUN, route, DNS, underlay monitoring, and
+Connected is published only after provider authentication, an authorized gateway, TUN, route, DNS, underlay monitoring, and
 an enabled SOCKS5 listener are ready. A switch failure retains the new selected profile and enters
 Error. Automatic reconnect retries only classified transient network, DNS, timeout, and underlay
 failures, with exponential backoff and a maximum of 3 attempts. Machine mode forces that policy and
@@ -50,6 +50,13 @@ unavailable physical path pauses attempts. Network recovery (including return to
 path changes, or Windows resume/unlock can start a fresh bounded retry cycle after exhaustion.
 Manual disconnect and non-transient failures clear intent. Network observers survive transport
 loss and are closed with the backend. See [the lifecycle decision](adr-connection-lifecycle.md).
+
+Each profile explicitly selects `anyconnect/password` or `atrust/ecnu_passkey` or
+`atrust/shanghaitech_passkey`. The daemon switches through one backend factory and one
+active session. aTrust authentication, resource policy, TCP/UDP, and optional packet
+transport live in GeekTrust; FlexConnect owns the OS TUN, route, DNS, and SOCKS5 listener.
+Before switching providers, the daemon closes the old session and restores its network
+objects. A cleanup failure stops the switch. Connection IDs reject late events.
 
 ## Network transaction
 
@@ -68,6 +75,13 @@ boundaries, IPv4 answers and CNAME ownership are validated, TTL is clamped to 30
 hour, shared addresses remain until their last lease expires, and the set is capped at 4096 unique
 addresses. A limit or reconciliation error is visible in health, diagnostics, and watch while the
 existing VPN remains intact.
+
+The aTrust TUN uses a user-space IPv4 stack to forward TCP and UDP to GeekTrust.
+An authorized domain can receive a local Fake-IP; forwarding restores the hostname
+before the SDK checks resource policy. ICMP Echo uses the SDK packet capability and
+reports errors if unsupported. Gateway certificates use system trust when available;
+for private-CA gateways, the daemon stores a per-address public-key pin on first use
+and rejects a changed pin. This first-use trust requires a trusted control-plane response.
 
 ## Verification boundary
 

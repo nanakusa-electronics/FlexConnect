@@ -19,6 +19,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  GOWORK: "off"
+
 jobs:
   validate:
     name: Validate release source
@@ -29,15 +32,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source-ref || github.ref }}
       - uses: actions/setup-go@v5
         with: { go-version: "1.26.2" }
       - run: go test ./...
       - run: go vet ./...
       - run: go build ./...
-      - run: go test -race ./internal/appd ./internal/apiserver ./internal/socks5 ./internal/osnet ./internal/vpn/anyconnect ./client/local
+      - run: go test -race ./internal/appd ./internal/apiserver ./internal/socks5 ./internal/osnet ./internal/vpn/anyconnect ./internal/vpn/atrust ./internal/vpn/multi ./internal/tunio ./client/local ./client/systray
       - name: Linux network namespace route ownership
         if: runner.os == 'Linux'
         run: sudo env "PATH=$PATH" FLEXCONNECT_NETNS_TEST=1 go test ./internal/osnet -run '^TestNetworkNamespaceRouteOwnershipTransaction$' -count=1
+      - name: Native aTrust TUN TCP and UDP flows
+        run: python scripts/test-native-atrust.py
       - name: Windows named-pipe actor integration
         if: runner.os == 'Windows'
         run: go test ./internal/ipc -run '^TestNamedPipeCapturesClientIdentity$' -count=1
@@ -79,14 +86,16 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_NAME }}
+          flavor: latest=false
           tags: |
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
             type=semver,pattern={{version}},event=tag
-            type=semver,pattern={{major}},event=tag
-            type=semver,pattern={{major}}.{{minor}},event=tag
+            type=semver,pattern={{major}},event=tag,enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}}.{{minor}},event=tag,enable=${{ !contains(github.ref_name, '-') }}
             type=semver,pattern={{version}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
-            type=semver,pattern={{major}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' }}
+            type=semver,pattern={{major}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' && !contains(github.event.inputs.image-tag, '-') }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ github.event.inputs.image-tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' && !contains(github.event.inputs.image-tag, '-') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag != '' && !contains(github.event.inputs.image-tag, '-') }}
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.image-tag == '' }}
 
       - name: Derive binary version

@@ -1,6 +1,6 @@
 # FlexConnect
 
-FlexConnect 是一个跨平台可配置的 AnyConnect VPN 客户端，提供守护进程、桌面托盘和命令行接口，支持 Windows、Linux 和 macOS。
+FlexConnect 2.0 是一个可选择 AnyConnect 或 aTrust 的 VPN 客户端，提供守护进程、桌面托盘和命令行接口，面向 Windows、Linux 和 macOS。
 
 ## 组件
 
@@ -9,6 +9,7 @@ FlexConnect 是一个跨平台可配置的 AnyConnect VPN 客户端，提供守�
 - `flexconnect`：命令行客户端，适合脚本和日常运维
 - `client/local`：类型化本地 API 客户端
 - `internal/vpn/anyconnect`：内建 AnyConnect 后端
+- `internal/vpn/atrust`：通过 GeekTrust 库连接 aTrust，由 FlexConnect 管理系统 TUN、路由和 DNS
 
 ## 能力
 
@@ -21,6 +22,15 @@ FlexConnect 是一个跨平台可配置的 AnyConnect VPN 客户端，提供守�
 - 通过命令行完成 Profile 管理与路由配置
 
 ## 快速开始
+
+### 从 1.3.x 升级
+
+升级前备份现有状态配置。2.0 守护进程启动时自动将 1.3.x 的 schema 2
+转换为 schema 3：旧 Profile 使用 AnyConnect/password，保留配置 ID、所属用户、
+选择项、控制模式、路由、DNS 和密码引用，无需重新录入已有密码。
+迁移不会更换密码存储后端。迁移成功后原子写回状态文件；不合法配置或写入失败
+会阻止启动。迁移是单向的，退回 1.3.x 需要恢复升级前的状态备份。
+CLI 和托盘须一起升级到 2.0。
 
 ### 启动守护进程和托盘
 
@@ -45,6 +55,19 @@ flexconnect profile list
 3. 创建或选择一个 Profile
 4. 输入服务器、用户名和密码并连接
 
+aTrust 的部署兼容行为由每个 Profile 显式配置，默认关闭。使用 `--atrust-compatibility-file` 导入 JSON，格式和开关说明见 [aTrust 部署兼容配置](docs/atrust-compatibility.md)。
+
+aTrust 使用已注册的 Passkey keystore。先启动守护进程，再运行 `flexconnect login`，
+在向导中选择 aTrust 和 ECNU/上海科大认证方式，填写服务器、导入 keystore，
+按需设置登录域。属性步骤可选择保留默认值、交互配置或导入部署兼容 JSON。
+交互配置支持服务器路由、系统 DNS、自动重连、自定义路由、SOCKS5、MTU，
+以及备用网关、TLS 域名、协议回退和进程元数据；网络与兼容设置均可单独跳过。
+用户名可留空，由 daemon 从 keystore 读取。
+也可使用 `profile add --provider atrust --auth-method ecnu_passkey --keystore <file>`。
+导入后请勿让其他程序并发使用源 keystore；源文件不会被自动删除。
+向导保存配置后，用 `flexconnect up` 连接；若请求短信验证码，用 `flexconnect auth respond` 提交。
+AnyConnect 向导仍会探测分组并验证密码。带参数的 `login` 仍用于 AnyConnect。
+
 连接成功后，CLI 与托盘会显示当前状态、VPN 地址、DNS 和路由摘要。
 
 ## 命令示例
@@ -59,6 +82,8 @@ flexconnect proxy status
 flexconnect proxy enable 127.0.0.1:1080
 flexconnect proxy disable
 flexconnect profile add --scope machine --password-file ./secrets/flexconnect_password unattended https://vpn.example.com machine-user
+flexconnect profile add --provider atrust --auth-method ecnu_passkey --keystore ./ecnu.keystore campus https://vpn.ecnu.edu.cn
+flexconnect up -p campus
 flexconnect control-mode machine -p unattended
 flexconnect control-mode user
 flexconnect logs
@@ -122,7 +147,7 @@ printf '%s\n' '<password>' > secrets/flexconnect_password
 FLEXCONNECT_SERVER=https://vpn.example.com FLEXCONNECT_USERNAME=alice docker compose -f docker-compose.example.yml up --build
 ```
 
-缺少必填环境变量、密码文件不可读或 machine Profile 持久化失败会直接非零退出。连接失败会保留 machine 锁并通过 `/v2/ready`、status、diagnostics 和 watch 暴露；只有明确分类为瞬态的错误才执行最多 3 次重连。管理员必须显式退出 machine 模式才能解除锁定。
+缺少必填环境变量、密码文件不可读或 machine Profile 持久化失败会直接非零退出。连接失败会保留 machine 锁并通过 `/v3/ready`、status、diagnostics 和 watch 暴露；只有明确分类为瞬态的错误才执行最多 3 次重连。管理员必须显式退出 machine 模式才能解除锁定。
 
 管理员手动管理 unattended 模式时，先用 `profile add --scope machine` 创建 machine Profile，
 再执行 `control-mode machine`。`control-mode` 会返回异步 operation；终态通过 watch 发布并在
@@ -131,7 +156,7 @@ FLEXCONNECT_SERVER=https://vpn.example.com FLEXCONNECT_USERNAME=alice docker com
 
 ### 发布到 GitHub Packages
 
-仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `1.3.4`）以及 `<major>`、`<major>.<minor>`。
+仓库中的 `Docker Release` 工作流会在推送 `v*` tag 时将镜像发布到 `ghcr.io`，并自动打上 `v` 去掉前缀后的版本标签（如 `2.0.0`）以及 `<major>`、`<major>.<minor>`。
 
 从 GHCR 发布镜像（可选）：
 
@@ -218,16 +243,16 @@ sudo usermod -aG flexconnect "$USER"
 
 ```bash
 go run ./cmd/dist list
-go run ./cmd/dist build --version 1.3.4 linux/amd64/tgz
-go run ./cmd/dist build --version 1.3.4 linux/amd64/deb
-go run ./cmd/dist build --version 1.3.4 linux/amd64/rpm
-go run ./cmd/dist build --version 1.3.4 windows/amd64/zip
-go run ./cmd/dist build --version 1.3.4 windows/amd64/msi
-go run ./cmd/dist build --version 1.3.4 darwin/amd64/pkg
-go run ./cmd/dist build --version 1.3.4 darwin/arm64/pkg
+go run ./cmd/dist build --version 2.0.0 linux/amd64/tgz
+go run ./cmd/dist build --version 2.0.0 linux/amd64/deb
+go run ./cmd/dist build --version 2.0.0 linux/amd64/rpm
+go run ./cmd/dist build --version 2.0.0 windows/amd64/zip
+go run ./cmd/dist build --version 2.0.0 windows/amd64/msi
+go run ./cmd/dist build --version 2.0.0 darwin/amd64/pkg
+go run ./cmd/dist build --version 2.0.0 darwin/arm64/pkg
 ```
 
-推送形如 `v1.3.4` 的 Git tag 后，GitHub Actions 会自动构建这些产物并创建对应的 GitHub Release。
+2.0.0 使用上游 GeekTrust SDK，固定合并提交 `5bb65f90b45ab34b28ed79197f67dd263a257ff5`（`github.com/ShanghaitechGeekPie/geektrust`）。构建直接下载上游 Go module，不依赖 fork 替换或本地 workspace。
 
 ## 运行与配置
 
@@ -238,7 +263,7 @@ go run ./cmd/dist build --version 1.3.4 darwin/arm64/pkg
 - `-v` 或 `--verbose` 启用更详细日志
 - Windows 上直接启动 `flexconnectd` 时会自动请求管理员权限
 - 密码通过系统密钥库保存，状态文件只保存非敏感元数据
-- CLI 在执行 daemon 命令前通过 `/v2/live` 和 `/v2/ready` 校验 API major、capabilities 与组件 readiness
+- CLI 在执行 daemon 命令前通过 `/v3/live` 和 `/v3/ready` 校验 API major、capabilities 与组件 readiness
 - Linux 本地控制接口通过 `0660 root:flexconnect` Unix socket 提供；Windows 使用受保护的 named pipe，不暴露公网 TCP 端口
 
 ## 项目结构
@@ -257,4 +282,20 @@ go run ./cmd/dist build --version 1.3.4 darwin/arm64/pkg
 
 ## 验证边界
 
-版本 1.3.4 的发布门禁覆盖 Windows、Linux 和 macOS 自动测试、race/vet/build、安装包构建和 Docker 构建。这些结果不代表真实 AnyConnect 服务器、真实主机网络变更或独立安全扫描已经验收。
+CI 和发布工作流使用 `GOWORK=off`，覆盖三平台测试、原生 TUN 流量检查、安装包和容器构建。实际企业 VPN、短信认证和休眠恢复仍需在目标环境验证。
+
+### Additional authentication in 2.0
+
+When an aTrust controller requests SMS verification, the tray displays a notice.
+Keep the connection attempt running and use another terminal:
+
+```sh
+flexconnect auth status
+flexconnect auth respond
+```
+
+The response prompt masks terminal input. For automation, use
+`flexconnect auth respond --response-stdin` with a private input source. Codes are
+not accepted on the command line and are not saved. Requests expire within one
+minute; submitting a code acknowledges delivery to the provider, while the ongoing
+connection operation reports the final authentication result.

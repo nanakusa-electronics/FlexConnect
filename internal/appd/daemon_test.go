@@ -622,6 +622,8 @@ func newTestService(t *testing.T, backend vpn.Backend, profiles ...types.Profile
 func testProfile(id string, autoReconnect bool) types.Profile {
 	return types.Profile{
 		ID:                 id,
+		Provider:           types.ProviderAnyConnect,
+		AuthMethod:         types.AuthPassword,
 		Name:               "test",
 		ServerURL:          "https://vpn.example.test",
 		Username:           "alice",

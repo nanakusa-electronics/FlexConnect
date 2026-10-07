@@ -18,6 +18,10 @@ import (
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
+func promptLoginRequest(ctx context.Context, in io.Reader, out io.Writer) (types.LoginRequest, error) {
+	return promptAnyConnectLoginRequest(ctx, bufio.NewReader(in), in, out)
+}
+
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
@@ -55,14 +59,14 @@ func TestInteractiveLoginStartsTimeoutAfterInput(t *testing.T) {
 
 		status := http.StatusOK
 		body := "{}"
-		if req.URL.Path == "/v2/live" {
-			body = `{"status":"ok","version":"1.3.0","api_major":2,"capabilities":["component-health","machine-mode","operations","profile-scope","structured-errors","watch-replay"]}`
-		} else if req.URL.Path == "/v2/ready" {
+		if req.URL.Path == "/v3/live" {
+			body = `{"status":"ok","version":"2.0.0-dev","api_major":3,"capabilities":["authentication","component-health","machine-mode","operations","profile-scope","vpn-providers","structured-errors","watch-replay"]}`
+		} else if req.URL.Path == "/v3/ready" {
 			body = `{"ready":true,"components":[]}`
-		} else if req.URL.Path == "/v2/profiles" && req.Method == http.MethodPost {
+		} else if req.URL.Path == "/v3/profiles" && req.Method == http.MethodPost {
 			status = http.StatusCreated
 			body = `{"id":"created","name":"corp","scope":"user"}`
-		} else if req.URL.Path == "/v2/profiles" {
+		} else if req.URL.Path == "/v3/profiles" {
 			body = "[]"
 		}
 		return &http.Response{
@@ -75,7 +79,7 @@ func TestInteractiveLoginStartsTimeoutAfterInput(t *testing.T) {
 
 	go func() {
 		time.Sleep(40 * time.Millisecond)
-		_, _ = io.WriteString(inputWriter, "https://vpn.example.com\n1\nalice\npassword\ncorp\n")
+		_, _ = io.WriteString(inputWriter, "\nhttps://vpn.example.com\n1\nalice\npassword\ncorp\n")
 		_ = inputWriter.Close()
 	}()
 
@@ -87,7 +91,7 @@ func TestInteractiveLoginStartsTimeoutAfterInput(t *testing.T) {
 		t.Fatalf("interactive login failed after slow input: %v", err)
 	}
 
-	want := []string{"/v2/profiles", "/v2/status", "/v2/profiles"}
+	want := []string{"/v3/profiles", "/v3/status", "/v3/profiles"}
 	if strings.Join(paths, ",") != strings.Join(want, ",") {
 		t.Fatalf("request paths = %v, want %v", paths, want)
 	}
@@ -103,14 +107,14 @@ func TestRunChecksDaemonBeforeInteractiveLogin(t *testing.T) {
 		paths = append(paths, req.URL.Path)
 		status := http.StatusOK
 		body := "{}"
-		if req.URL.Path == "/v2/live" {
-			body = `{"status":"ok","version":"1.3.0","api_major":2,"capabilities":["component-health","machine-mode","operations","profile-scope","structured-errors","watch-replay"]}`
-		} else if req.URL.Path == "/v2/ready" {
+		if req.URL.Path == "/v3/live" {
+			body = `{"status":"ok","version":"2.0.0-dev","api_major":3,"capabilities":["authentication","component-health","machine-mode","operations","profile-scope","vpn-providers","structured-errors","watch-replay"]}`
+		} else if req.URL.Path == "/v3/ready" {
 			body = `{"ready":true,"components":[]}`
-		} else if req.URL.Path == "/v2/profiles" && req.Method == http.MethodPost {
+		} else if req.URL.Path == "/v3/profiles" && req.Method == http.MethodPost {
 			status = http.StatusCreated
 			body = `{"id":"created","name":"corp","scope":"user"}`
-		} else if req.URL.Path == "/v2/profiles" {
+		} else if req.URL.Path == "/v3/profiles" {
 			body = "[]"
 		}
 		return &http.Response{
@@ -122,7 +126,7 @@ func TestRunChecksDaemonBeforeInteractiveLogin(t *testing.T) {
 	})}
 
 	go func() {
-		_, _ = io.WriteString(inputWriter, "https://vpn.example.com\n1\nalice\npassword\ncorp\n")
+		_, _ = io.WriteString(inputWriter, "\nhttps://vpn.example.com\n1\nalice\npassword\ncorp\n")
 		_ = inputWriter.Close()
 	}()
 
@@ -134,7 +138,7 @@ func TestRunChecksDaemonBeforeInteractiveLogin(t *testing.T) {
 		t.Fatalf("run interactive login: %v", err)
 	}
 
-	want := []string{"/v2/live", "/v2/ready", "/v2/profiles", "/v2/status", "/v2/profiles"}
+	want := []string{"/v3/live", "/v3/ready", "/v3/profiles", "/v3/status", "/v3/profiles"}
 	if strings.Join(paths, ",") != strings.Join(want, ",") {
 		t.Fatalf("request paths = %v, want %v", paths, want)
 	}

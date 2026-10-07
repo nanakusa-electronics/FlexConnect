@@ -119,7 +119,7 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader) (*
 
 func (c *Client) Status(ctx context.Context) (*types.Status, error) {
 	var out types.Status
-	return &out, c.getJSON(ctx, "/v2/status", &out)
+	return &out, c.getJSON(ctx, "/v3/status", &out)
 }
 
 func (c *Client) Health(ctx context.Context) (*types.Health, error) {
@@ -158,7 +158,7 @@ func (e *NotReadyError) Error() string {
 
 func (c *Client) Live(ctx context.Context) (*types.LiveStatus, error) {
 	var live types.LiveStatus
-	if err := c.getJSON(ctx, "/v2/live", &live); err != nil {
+	if err := c.getJSON(ctx, "/v3/live", &live); err != nil {
 		return nil, err
 	}
 	if live.APIMajor != buildinfo.LocalAPIMajor {
@@ -178,7 +178,7 @@ func (c *Client) Live(ctx context.Context) (*types.LiveStatus, error) {
 
 func (c *Client) Ready(ctx context.Context) (*types.ReadyStatus, error) {
 	var ready types.ReadyStatus
-	res, err := c.do(ctx, http.MethodGet, "/v2/ready", nil)
+	res, err := c.do(ctx, http.MethodGet, "/v3/ready", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func (c *Client) Ready(ctx context.Context) (*types.ReadyStatus, error) {
 
 func (c *Client) Profiles(ctx context.Context) ([]types.Profile, error) {
 	var out []types.Profile
-	return out, c.getJSON(ctx, "/v2/profiles", &out)
+	return out, c.getJSON(ctx, "/v3/profiles", &out)
 }
 
 func (c *Client) CurrentProfile(ctx context.Context) (*types.Profile, error) {
@@ -215,13 +215,17 @@ func (c *Client) CurrentProfile(ctx context.Context) (*types.Profile, error) {
 }
 
 func (c *Client) CreateProfile(ctx context.Context, profile types.Profile, password string) (*types.Profile, error) {
-	payload := types.ProfileCreateRequest{Name: profile.Name, ServerURL: profile.ServerURL, Username: profile.Username, Password: password, Group: profile.Group, Scope: profile.Scope, AcceptServerRoutes: &profile.AcceptServerRoutes, AutoReconnect: profile.AutoReconnect, ApplyDNS: profile.ApplyDNS, CustomInclude: profile.CustomInclude, CustomExclude: profile.CustomExclude, DNSOverrides: profile.DNSOverrides, SOCKS5Enabled: profile.SOCKS5Enabled, SOCKS5Listen: profile.SOCKS5Listen, MTU: profile.MTU}
+	return c.CreateProfileWithCredential(ctx, profile, password, nil)
+}
+
+func (c *Client) CreateProfileWithCredential(ctx context.Context, profile types.Profile, password string, credential []byte) (*types.Profile, error) {
+	payload := types.ProfileCreateRequest{ATrustCompatibility: profile.ATrustCompatibility.Clone(), Provider: profile.Provider, AuthMethod: profile.AuthMethod, LoginDomain: profile.LoginDomain, Credential: credential, Name: profile.Name, ServerURL: profile.ServerURL, Username: profile.Username, Password: password, Group: profile.Group, Scope: profile.Scope, AcceptServerRoutes: &profile.AcceptServerRoutes, AutoReconnect: profile.AutoReconnect, ApplyDNS: profile.ApplyDNS, CustomInclude: profile.CustomInclude, CustomExclude: profile.CustomExclude, DNSOverrides: profile.DNSOverrides, SOCKS5Enabled: profile.SOCKS5Enabled, SOCKS5Listen: profile.SOCKS5Listen, MTU: profile.MTU}
 	var out types.Profile
-	return &out, c.sendJSON(ctx, http.MethodPost, "/v2/profiles", payload, &out, http.StatusCreated)
+	return &out, c.sendJSON(ctx, http.MethodPost, "/v3/profiles", payload, &out, http.StatusCreated)
 }
 
 func (c *Client) UpdateProfile(ctx context.Context, id string, req types.ProfileUpdateRequest) (types.ProfileMutationResult, error) {
-	path := "/v2/profiles/" + url.PathEscape(id)
+	path := "/v3/profiles/" + url.PathEscape(id)
 	res, err := c.sendRequest(ctx, http.MethodPatch, path, req)
 	if err != nil {
 		return types.ProfileMutationResult{}, err
@@ -250,7 +254,7 @@ func (c *Client) SwitchProfile(ctx context.Context, id string) error {
 }
 
 func (c *Client) DeleteProfile(ctx context.Context, id string) error {
-	return c.expectStatus(ctx, http.MethodDelete, "/v2/profiles/"+url.PathEscape(id), nil, http.StatusNoContent, http.StatusAccepted)
+	return c.expectStatus(ctx, http.MethodDelete, "/v3/profiles/"+url.PathEscape(id), nil, http.StatusNoContent, http.StatusAccepted)
 }
 
 func (c *Client) Login(ctx context.Context, req types.LoginRequest) error {
@@ -278,7 +282,7 @@ func (c *Client) Connect(ctx context.Context, id string) error {
 	if id == "" {
 		return c.ConnectCurrent(ctx)
 	}
-	return c.expectStatusJSON(ctx, http.MethodPut, "/v2/connection", types.ConnectionRequest{ProfileID: id}, http.StatusAccepted)
+	return c.expectStatusJSON(ctx, http.MethodPut, "/v3/connection", types.ConnectionRequest{ProfileID: id}, http.StatusAccepted)
 }
 
 func (c *Client) ConnectCurrent(ctx context.Context) error {
@@ -290,12 +294,12 @@ func (c *Client) ConnectCurrent(ctx context.Context) error {
 }
 
 func (c *Client) Disconnect(ctx context.Context) error {
-	return c.expectStatus(ctx, http.MethodDelete, "/v2/connection", nil, http.StatusNoContent, http.StatusAccepted)
+	return c.expectStatus(ctx, http.MethodDelete, "/v3/connection", nil, http.StatusNoContent, http.StatusAccepted)
 }
 
 func (c *Client) SetControlMode(ctx context.Context, mode, profileID string) (*types.Operation, error) {
 	var ref types.OperationRef
-	if err := c.sendJSON(ctx, http.MethodPut, "/v2/control-mode", types.ControlModeRequest{Mode: mode, ProfileID: profileID}, &ref, http.StatusAccepted); err != nil {
+	if err := c.sendJSON(ctx, http.MethodPut, "/v3/control-mode", types.ControlModeRequest{Mode: mode, ProfileID: profileID}, &ref, http.StatusAccepted); err != nil {
 		return nil, err
 	}
 	return &ref.Operation, nil
@@ -304,27 +308,27 @@ func (c *Client) SetControlMode(ctx context.Context, mode, profileID string) (*t
 func (c *Client) UpdateRoutes(ctx context.Context, id string, req types.RouteUpdateRequest) (*types.Profile, error) {
 	var out types.Profile
 	update := types.ProfileUpdateRequest{AcceptServerRoutes: req.AcceptServerRoutes, CustomInclude: req.CustomInclude, CustomExclude: req.CustomExclude}
-	return &out, c.sendJSON(ctx, http.MethodPatch, "/v2/profiles/"+url.PathEscape(id), update, &out, http.StatusOK)
+	return &out, c.sendJSON(ctx, http.MethodPatch, "/v3/profiles/"+url.PathEscape(id), update, &out, http.StatusOK)
 }
 
 func (c *Client) Logs(ctx context.Context) ([]types.LogEntry, error) {
 	var out []types.LogEntry
-	return out, c.getJSON(ctx, "/v2/logs", &out)
+	return out, c.getJSON(ctx, "/v3/logs", &out)
 }
 
 func (c *Client) Diagnostics(ctx context.Context) (*types.Diagnostics, error) {
 	var out types.Diagnostics
-	return &out, c.getJSON(ctx, "/v2/diagnostics", &out)
+	return &out, c.getJSON(ctx, "/v3/diagnostics", &out)
 }
 
 func (c *Client) Traffic(ctx context.Context) (*types.TrafficSnapshot, error) {
 	var out types.TrafficSnapshot
-	return &out, c.getJSON(ctx, "/v2/traffic", &out)
+	return &out, c.getJSON(ctx, "/v3/traffic", &out)
 }
 
 func (c *Client) UpdateCheck(ctx context.Context) (*types.UpdateInfo, error) {
 	var out types.UpdateInfo
-	return &out, c.getJSON(ctx, "/v2/update/check", &out)
+	return &out, c.getJSON(ctx, "/v3/update/check", &out)
 }
 
 func (c *Client) DiagnosticsText(ctx context.Context) (string, error) {
@@ -344,7 +348,7 @@ func (c *Client) Watch(ctx context.Context) (*Watcher, error) {
 }
 
 func (c *Client) WatchSince(ctx context.Context, epoch string, since uint64) (*Watcher, error) {
-	path := "/v2/watch?since=" + strconv.FormatUint(since, 10)
+	path := "/v3/watch?since=" + strconv.FormatUint(since, 10)
 	if epoch != "" {
 		path += "&epoch=" + url.QueryEscape(epoch)
 	}

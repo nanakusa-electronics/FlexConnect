@@ -2,8 +2,10 @@ package appd
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +22,7 @@ import (
 	"flexconnect/internal/types"
 	"flexconnect/internal/updater"
 	"flexconnect/internal/vpn"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 )
 
 var (
@@ -53,6 +56,7 @@ type Store interface {
 }
 
 type Service struct {
+	authentication          *pendingAuthentication
 	mu                      sync.Mutex
 	commandMu               sync.Mutex
 	store                   Store
@@ -156,8 +160,25 @@ func (s *Service) load() error {
 		return err
 	}
 	s.health["store"] = types.ComponentStatus{Name: "store", Ready: true}
+	migrated := data.SchemaVersion == 2
+	if migrated {
+		for i := range data.Profiles {
+			data.Profiles[i].Provider = types.ProviderAnyConnect
+			data.Profiles[i].AuthMethod = types.AuthPassword
+		}
+		if data.Intent != nil && data.Intent.NewProfile != nil {
+			data.Intent.NewProfile.Provider = types.ProviderAnyConnect
+			data.Intent.NewProfile.AuthMethod = types.AuthPassword
+			profile := profileio.NormalizeProfile(*data.Intent.NewProfile)
+			if err := profileio.ValidateProfile(profile); err != nil {
+				return fmt.Errorf("invalid migrating profile transaction: %w", err)
+			}
+			data.Intent.NewProfile = &profile
+		}
+		data.SchemaVersion = storefile.CurrentSchemaVersion
+	}
 	if data.SchemaVersion != storefile.CurrentSchemaVersion {
-		return fmt.Errorf("unsupported state schema version %d; FlexConnect 1.3.0 requires schema version %d and does not migrate older state", data.SchemaVersion, storefile.CurrentSchemaVersion)
+		return fmt.Errorf("unsupported state schema version %d; expected schema 2 or %d", data.SchemaVersion, storefile.CurrentSchemaVersion)
 	}
 	appdLog.Printf("loaded state current_id=%s total_profiles=%d", data.CurrentProfileID, len(data.Profiles))
 	s.profiles = data.Profiles
@@ -211,6 +232,12 @@ func (s *Service) load() error {
 	s.status.ControlMode = s.controlMode
 	if err := s.recoverIntentLocked(); err != nil {
 		return fmt.Errorf("recover profile transaction: %w", err)
+	}
+	if migrated {
+		if err := s.persist(); err != nil {
+			return fmt.Errorf("persist schema 2 to 3 migration: %w", err)
+		}
+		appdLog.Printf("migrated state schema 2 to 3")
 	}
 	appdDebugf("state loaded current=%s profile_count=%d", s.currentID, len(s.profiles))
 	return nil
@@ -661,7 +688,7 @@ func (s *Service) CreateProfile(profile types.Profile, password string) (types.P
 		profile.SecretRef = "profile/" + profile.ID
 	}
 	if password == "" {
-		return types.Profile{}, errors.New("profile password is required")
+		return types.Profile{}, errors.New("profile credential is required")
 	}
 	if err := s.commitProfileLocked(-1, &profile, password, ""); err != nil {
 		return types.Profile{}, err
@@ -705,6 +732,18 @@ func (s *Service) updateProfile(id string, req types.ProfileUpdateRequest, apply
 	profile := before
 	if req.Name != nil {
 		profile.Name = *req.Name
+	}
+	if req.Provider != nil {
+		profile.Provider = *req.Provider
+	}
+	if req.AuthMethod != nil {
+		profile.AuthMethod = *req.AuthMethod
+	}
+	if req.ATrustCompatibility != nil {
+		profile.ATrustCompatibility = req.ATrustCompatibility.Clone()
+	}
+	if req.LoginDomain != nil {
+		profile.LoginDomain = *req.LoginDomain
 	}
 	if req.ServerURL != nil {
 		profile.ServerURL = *req.ServerURL
@@ -751,6 +790,26 @@ func (s *Service) updateProfile(id string, req types.ProfileUpdateRequest, apply
 	password := ""
 	if req.Password != nil {
 		password = *req.Password
+	}
+	if len(req.Credential) != 0 {
+		info, inspectErr := geektrust.InspectPasskey(req.Credential)
+		if profile.Provider != types.ProviderATrust || len(req.Credential) > 1<<20 || inspectErr != nil || !passkeyMethodMatches(profile.AuthMethod, info.Kind) || profile.Username != info.Username {
+			s.mu.Unlock()
+			return types.Profile{}, false, errors.New("invalid passkey credential")
+		}
+		password = base64.StdEncoding.EncodeToString(req.Credential)
+	}
+	if req.Password != nil && profile.Provider != types.ProviderAnyConnect {
+		s.mu.Unlock()
+		return types.Profile{}, false, errors.New("password update requires AnyConnect provider")
+	}
+	if req.Password != nil && len(req.Credential) != 0 {
+		s.mu.Unlock()
+		return types.Profile{}, false, errors.New("provide one credential type")
+	}
+	if (before.Provider != profile.Provider || before.AuthMethod != profile.AuthMethod) && password == "" {
+		s.mu.Unlock()
+		return types.Profile{}, false, errors.New("changing provider or authentication method requires a new credential")
 	}
 	if req.Password != nil && password == "" {
 		s.mu.Unlock()
@@ -1421,7 +1480,11 @@ func (s *Service) reconnectProfile(ctx context.Context, id, reason string) error
 }
 
 func needsReconnectForProfileUpdate(before, after types.Profile) bool {
-	if before.ServerURL != after.ServerURL ||
+	if !reflect.DeepEqual(before.ATrustCompatibility, after.ATrustCompatibility) {
+		return true
+	}
+	if before.Provider != after.Provider || before.AuthMethod != after.AuthMethod || before.LoginDomain != after.LoginDomain ||
+		before.ServerURL != after.ServerURL ||
 		before.Username != after.Username ||
 		before.Group != after.Group ||
 		before.AcceptServerRoutes != after.AcceptServerRoutes ||
@@ -1475,6 +1538,9 @@ func (s *Service) prepareLoginProfileLocked(req types.LoginRequest) (types.Profi
 	}
 	if req.Group != "" {
 		profile.Group = req.Group
+	}
+	if profile.Provider != types.ProviderAnyConnect {
+		return types.Profile{}, "", errors.New("login supports AnyConnect profiles only; use profile add with a keystore for aTrust")
 	}
 	profile = profileio.NormalizeProfile(profile)
 	if profile.Name == "" {
@@ -1599,7 +1665,9 @@ func (s *Service) connectPreparedProfile(ctx context.Context, profile types.Prof
 	})
 	s.mu.Unlock()
 
-	session, err := s.backend.Connect(attemptCtx, vpn.ConnectRequest{Profile: profile, Password: password, AttemptID: attemptID, ConnectionID: connectionID, OwnerID: profile.OwnerID})
+	session, err := s.backend.Connect(attemptCtx, vpn.ConnectRequest{Profile: profile, Password: password, AttemptID: attemptID, ConnectionID: connectionID, OwnerID: profile.OwnerID, Authenticate: func(ctx context.Context, prompt vpn.AuthenticationPrompt) (string, error) {
+		return s.requestAuthentication(ctx, profile.ID, attemptID, connectionID, prompt)
+	}})
 	if err != nil {
 		s.mu.Lock()
 		if s.attemptID != attemptID {

@@ -61,7 +61,7 @@ type storedData struct {
 	Intent           *storedIntent     `json:"intent,omitempty"`
 }
 
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
 
 type Store struct {
 	path string

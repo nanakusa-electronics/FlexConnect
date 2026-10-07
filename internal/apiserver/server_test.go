@@ -29,7 +29,7 @@ func (validationDaemon) CreateProfileFor(appd.Actor, types.ProfileCreateRequest)
 }
 
 func TestValidationErrorUsesStructured422(t *testing.T) {
-	req := request(http.MethodPost, "/v2/profiles")
+	req := request(http.MethodPost, "/v3/profiles")
 	req.Body = io.NopCloser(bytes.NewBufferString(`{"name":"bad"}`))
 	rec := httptest.NewRecorder()
 	New(validationDaemon{}).Handler().ServeHTTP(rec, req)
@@ -92,7 +92,7 @@ func request(method, path string) *http.Request {
 
 func TestLiveReturnsVersionAndCapabilities(t *testing.T) {
 	rec := httptest.NewRecorder()
-	New(fakeDaemon{}).Handler().ServeHTTP(rec, request(http.MethodGet, "/v2/live"))
+	New(fakeDaemon{}).Handler().ServeHTTP(rec, request(http.MethodGet, "/v3/live"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -100,7 +100,7 @@ func TestLiveReturnsVersionAndCapabilities(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != buildinfo.Version || got.APIMajor != 2 {
+	if got.Version != buildinfo.Version || got.APIMajor != 3 {
 		t.Fatalf("live = %+v", got)
 	}
 	want := map[string]bool{"watch-replay": false, "structured-errors": false}
@@ -137,7 +137,7 @@ func TestRejectsInvalidHostAndOrigin(t *testing.T) {
 		"origin": func(r *http.Request) { r.Header.Set("Origin", "https://evil.example") },
 	} {
 		t.Run(name, func(t *testing.T) {
-			req := request(http.MethodGet, "/v2/status")
+			req := request(http.MethodGet, "/v3/status")
 			mutate(req)
 			rec := httptest.NewRecorder()
 			New(fakeDaemon{}).Handler().ServeHTTP(rec, req)
@@ -150,7 +150,7 @@ func TestRejectsInvalidHostAndOrigin(t *testing.T) {
 
 func TestRequestBodyIsBoundedAndStructured(t *testing.T) {
 	body := bytes.NewReader(bytes.Repeat([]byte("x"), maxRequestBodyBytes+1))
-	req := httptest.NewRequest(http.MethodPost, "http://"+ipc.LocalAPIHost+"/v2/profiles", body)
+	req := httptest.NewRequest(http.MethodPost, "http://"+ipc.LocalAPIHost+"/v3/profiles", body)
 	req = req.WithContext(WithActor(req.Context(), appd.SystemActor()))
 	rec := httptest.NewRecorder()
 	New(fakeDaemon{}).Handler().ServeHTTP(rec, req)
@@ -163,7 +163,7 @@ func TestRequestBodyIsBoundedAndStructured(t *testing.T) {
 }
 
 func TestConnectionIsAsynchronous(t *testing.T) {
-	req := request(http.MethodPut, "/v2/connection")
+	req := request(http.MethodPut, "/v3/connection")
 	req.Body = http.NoBody
 	req.Header.Set("Content-Type", "application/json")
 	req = req.Clone(req.Context())
@@ -174,3 +174,8 @@ func TestConnectionIsAsynchronous(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func (fakeDaemon) AuthenticationFor(appd.Actor) (*types.AuthenticationChallenge, error) {
+	return nil, nil
+}
+func (fakeDaemon) RespondAuthenticationFor(appd.Actor, string, string) error { return nil }

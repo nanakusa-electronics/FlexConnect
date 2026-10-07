@@ -1,6 +1,6 @@
 package buildinfo
 
-var Version = "1.3.8"
+var Version = "2.0.0"
 
 // UpdateRepo is the GitHub "owner/name" used for online update checks.
 // It is overridable at build time via ldflags and at runtime via the
@@ -8,14 +8,16 @@ var Version = "1.3.8"
 // update checks silently.
 var UpdateRepo = ""
 
-const LocalAPIVersion = "2"
-const LocalAPIMajor = 2
+const LocalAPIVersion = "3"
+const LocalAPIMajor = 3
 
 var LocalAPICapabilities = []string{
+	"authentication",
 	"component-health",
 	"machine-mode",
 	"operations",
 	"profile-scope",
+	"vpn-providers",
 	"structured-errors",
 	"watch-replay",
 }

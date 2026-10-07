@@ -35,4 +35,6 @@ flexd-test-state.json
 # Temp/cache
 .tmp/
 tmp/
+/go.work
+/go.work.sum
 temp/

@@ -2,6 +2,7 @@ package appd
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"flexconnect/internal/profileio"
 	"flexconnect/internal/types"
 	"flexconnect/internal/vpn"
+	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
 )
 
 type Actor struct {
@@ -297,8 +299,31 @@ func (s *Service) CreateProfileFor(actor Actor, req types.ProfileCreateRequest) 
 	if err := s.authorize(actor, true); err != nil {
 		return types.Profile{}, err
 	}
-	if req.Password == "" {
+	if req.Provider == "" || req.AuthMethod == "" {
+		return types.Profile{}, coded("invalid_profile_provider", "provider and authentication method are required", nil)
+	}
+	if req.Provider == types.ProviderAnyConnect && req.Password == "" {
 		return types.Profile{}, coded("invalid_profile_secret", "profile password is required", nil)
+	}
+	if req.Provider == types.ProviderATrust && req.Password != "" {
+		return types.Profile{}, coded("invalid_profile_secret", "aTrust credentials must be imported separately", nil)
+	}
+	if req.Provider == types.ProviderATrust {
+		if len(req.Credential) == 0 || len(req.Credential) > 1<<20 {
+			return types.Profile{}, coded("invalid_profile_secret", "valid passkey credential is required", nil)
+		}
+		info, err := geektrust.InspectPasskey(req.Credential)
+		if err != nil || !passkeyMethodMatches(req.AuthMethod, info.Kind) {
+			return types.Profile{}, coded("invalid_profile_secret", "passkey credential does not match authentication method", nil)
+		}
+		if req.Username == "" {
+			req.Username = info.Username
+		}
+		if req.Username != info.Username {
+			return types.Profile{}, coded("invalid_profile_secret", "profile username does not match credential", nil)
+		}
+	} else if len(req.Credential) != 0 {
+		return types.Profile{}, coded("invalid_profile_secret", "AnyConnect does not accept a passkey credential", nil)
 	}
 	if req.Scope == "" {
 		req.Scope = types.ProfileScopeUser
@@ -311,6 +336,10 @@ func (s *Service) CreateProfileFor(actor Actor, req types.ProfileCreateRequest) 
 		return types.Profile{}, coded("random_source_failed", "generate profile ID failed", err)
 	}
 	profile.ServerURL = req.ServerURL
+	profile.Provider = req.Provider
+	profile.AuthMethod = req.AuthMethod
+	profile.LoginDomain = req.LoginDomain
+	profile.ATrustCompatibility = req.ATrustCompatibility.Clone()
 	profile.Username = req.Username
 	profile.Group = req.Group
 	profile.Scope = req.Scope
@@ -341,7 +370,11 @@ func (s *Service) CreateProfileFor(actor Actor, req types.ProfileCreateRequest) 
 		profile.MTU = req.MTU
 	}
 	profile = profileio.NormalizeProfile(profile)
-	created, err := s.CreateProfile(profile, req.Password)
+	secretValue := req.Password
+	if req.Provider == types.ProviderATrust {
+		secretValue = base64.StdEncoding.EncodeToString(req.Credential)
+	}
+	created, err := s.CreateProfile(profile, secretValue)
 	if err != nil {
 		return types.Profile{}, err
 	}
@@ -358,6 +391,11 @@ func (s *Service) CreateProfileFor(actor Actor, req types.ProfileCreateRequest) 
 	}
 	s.mu.Unlock()
 	return publicProfile(created, actor), nil
+}
+
+func passkeyMethodMatches(method types.AuthMethod, kind string) bool {
+	return method == types.AuthECNUPasskey && kind == "ecnu" ||
+		method == types.AuthShanghaiTechPasskey && kind == "shanghaitech"
 }
 
 func (s *Service) profileForActor(actor Actor, id string) (types.Profile, error) {
@@ -676,6 +714,7 @@ func (s *Service) WatchSince(ctx context.Context, actor Actor, epoch string, sin
 			profiles = append(profiles, publicProfile(profile, actor))
 		}
 	}
+	authentication := s.authenticationForLocked(actor)
 	currentRevision := s.revision
 	currentEpoch := s.epoch
 	s.mu.Unlock()
@@ -691,7 +730,7 @@ func (s *Service) WatchSince(ctx context.Context, actor Actor, epoch string, sin
 	go func() {
 		defer close(out)
 		if needSnapshot {
-			out <- types.Notify{Epoch: currentEpoch, Revision: currentRevision, Event: "snapshot", Status: &status, Profiles: profiles, Time: now()}
+			out <- types.Notify{Epoch: currentEpoch, Revision: currentRevision, Event: "snapshot", Authentication: authentication, Status: &status, Profiles: profiles, Time: now()}
 		} else {
 			for _, event := range replay {
 				out <- event
@@ -709,6 +748,12 @@ func (s *Service) WatchSince(ctx context.Context, actor Actor, epoch string, sin
 
 func (s *Service) notifyForActorLocked(actor Actor, event types.Notify) types.Notify {
 	copy := cloneNotify(event)
+	if copy.Authentication != nil {
+		current := s.authenticationForLocked(actor)
+		if current == nil || current.ID != copy.Authentication.ID {
+			copy.Authentication = nil
+		}
+	}
 	if copy.Status != nil {
 		status := s.statusForActorLocked(actor)
 		copy.Status = &status
@@ -760,6 +805,7 @@ func cloneStatus(status types.Status) types.Status {
 
 func cloneNotify(event types.Notify) types.Notify {
 	copy := event
+	copy.Authentication = cloneAuthentication(event.Authentication)
 	if event.Status != nil {
 		status := cloneStatus(*event.Status)
 		copy.Status = &status
@@ -800,6 +846,7 @@ func cloneNotify(event types.Notify) types.Notify {
 }
 
 func cloneProfile(profile types.Profile) types.Profile {
+	profile.ATrustCompatibility = profile.ATrustCompatibility.Clone()
 	profile.CustomInclude = append([]string(nil), profile.CustomInclude...)
 	profile.CustomExclude = append([]string(nil), profile.CustomExclude...)
 	profile.DNSOverrides = append([]string(nil), profile.DNSOverrides...)

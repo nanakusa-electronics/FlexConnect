@@ -134,6 +134,8 @@ func upgradeCode(b *dist.Build) string {
 }
 
 func windowsMSIVersion(version string) string {
+	version, _, _ = strings.Cut(version, "-")
+	version, _, _ = strings.Cut(version, "+")
 	parts := strings.Split(version, ".")
 	for len(parts) < 3 {
 		parts = append(parts, "0")

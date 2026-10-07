@@ -19,6 +19,9 @@ func TestWindowsFilenames(t *testing.T) {
 	if got := windowsMSIVersion("1.2"); got != "1.2.0" {
 		t.Fatalf("unexpected msi version %q", got)
 	}
+	if got := windowsMSIVersion("2.0.0-beta.1"); got != "2.0.0" {
+		t.Fatalf("beta MSI product version = %q", got)
+	}
 }
 
 func TestUpgradeCode(t *testing.T) {

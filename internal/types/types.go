@@ -5,11 +5,23 @@ import (
 	"encoding/hex"
 	"io"
 	"time"
+
+	"github.com/ShanghaitechGeekPie/geektrust/deployment"
 )
 
 type State string
 
 type ProfileScope string
+type Provider string
+type AuthMethod string
+
+const (
+	ProviderAnyConnect      Provider   = "anyconnect"
+	ProviderATrust          Provider   = "atrust"
+	AuthPassword            AuthMethod = "password"
+	AuthECNUPasskey         AuthMethod = "ecnu_passkey"
+	AuthShanghaiTechPasskey AuthMethod = "shanghaitech_passkey"
+)
 
 const (
 	ProfileScopeUser    ProfileScope = "user"
@@ -32,61 +44,78 @@ type RouteSpec struct {
 	Enabled     bool   `json:"enabled"`
 }
 
+// ATrustCompatibility shares the protocol library's explicit deployment settings.
+type ATrustCompatibility = deployment.Compatibility
+
 type Profile struct {
-	ID                 string       `json:"id"`
-	Name               string       `json:"name"`
-	ServerURL          string       `json:"server_url"`
-	Username           string       `json:"username"`
-	SecretRef          string       `json:"-"`
-	Scope              ProfileScope `json:"scope"`
-	OwnerID            string       `json:"-"`
-	Group              string       `json:"group"`
-	AcceptServerRoutes bool         `json:"accept_server_routes"`
-	AutoReconnect      *bool        `json:"auto_reconnect"`
-	ApplyDNS           *bool        `json:"apply_dns"`
-	CustomInclude      []string     `json:"custom_include_routes"`
-	CustomExclude      []string     `json:"custom_exclude_routes"`
-	DNSOverrides       []string     `json:"dns_overrides"`
-	SOCKS5Enabled      bool         `json:"socks5_enabled"`
-	SOCKS5Listen       string       `json:"socks5_listen"`
-	MTU                int          `json:"mtu"`
-	CreatedAt          string       `json:"created_at"`
-	UpdatedAt          string       `json:"updated_at"`
+	ATrustCompatibility ATrustCompatibility `json:"atrust_compatibility"`
+	ID                  string              `json:"id"`
+	Provider            Provider            `json:"provider"`
+	AuthMethod          AuthMethod          `json:"auth_method"`
+	LoginDomain         string              `json:"login_domain,omitempty"`
+	Name                string              `json:"name"`
+	ServerURL           string              `json:"server_url"`
+	Username            string              `json:"username"`
+	SecretRef           string              `json:"-"`
+	Scope               ProfileScope        `json:"scope"`
+	OwnerID             string              `json:"-"`
+	Group               string              `json:"group"`
+	AcceptServerRoutes  bool                `json:"accept_server_routes"`
+	AutoReconnect       *bool               `json:"auto_reconnect"`
+	ApplyDNS            *bool               `json:"apply_dns"`
+	CustomInclude       []string            `json:"custom_include_routes"`
+	CustomExclude       []string            `json:"custom_exclude_routes"`
+	DNSOverrides        []string            `json:"dns_overrides"`
+	SOCKS5Enabled       bool                `json:"socks5_enabled"`
+	SOCKS5Listen        string              `json:"socks5_listen"`
+	MTU                 int                 `json:"mtu"`
+	CreatedAt           string              `json:"created_at"`
+	UpdatedAt           string              `json:"updated_at"`
 }
 
 type ProfileCreateRequest struct {
-	Name               string       `json:"name"`
-	ServerURL          string       `json:"server_url"`
-	Username           string       `json:"username"`
-	Password           string       `json:"password,omitempty"`
-	Group              string       `json:"group,omitempty"`
-	Scope              ProfileScope `json:"scope"`
-	AcceptServerRoutes *bool        `json:"accept_server_routes,omitempty"`
-	AutoReconnect      *bool        `json:"auto_reconnect,omitempty"`
-	ApplyDNS           *bool        `json:"apply_dns,omitempty"`
-	CustomInclude      []string     `json:"custom_include_routes,omitempty"`
-	CustomExclude      []string     `json:"custom_exclude_routes,omitempty"`
-	DNSOverrides       []string     `json:"dns_overrides,omitempty"`
-	SOCKS5Enabled      bool         `json:"socks5_enabled,omitempty"`
-	SOCKS5Listen       string       `json:"socks5_listen,omitempty"`
-	MTU                int          `json:"mtu,omitempty"`
+	ATrustCompatibility ATrustCompatibility `json:"atrust_compatibility"`
+	Provider            Provider            `json:"provider"`
+	AuthMethod          AuthMethod          `json:"auth_method"`
+	LoginDomain         string              `json:"login_domain,omitempty"`
+	Credential          []byte              `json:"credential,omitempty"`
+	Name                string              `json:"name"`
+	ServerURL           string              `json:"server_url"`
+	Username            string              `json:"username"`
+	Password            string              `json:"password,omitempty"`
+	Group               string              `json:"group,omitempty"`
+	Scope               ProfileScope        `json:"scope"`
+	AcceptServerRoutes  *bool               `json:"accept_server_routes,omitempty"`
+	AutoReconnect       *bool               `json:"auto_reconnect,omitempty"`
+	ApplyDNS            *bool               `json:"apply_dns,omitempty"`
+	CustomInclude       []string            `json:"custom_include_routes,omitempty"`
+	CustomExclude       []string            `json:"custom_exclude_routes,omitempty"`
+	DNSOverrides        []string            `json:"dns_overrides,omitempty"`
+	SOCKS5Enabled       bool                `json:"socks5_enabled,omitempty"`
+	SOCKS5Listen        string              `json:"socks5_listen,omitempty"`
+	MTU                 int                 `json:"mtu,omitempty"`
 }
 
 type ProfileUpdateRequest struct {
-	Name               *string  `json:"name,omitempty"`
-	ServerURL          *string  `json:"server_url,omitempty"`
-	Username           *string  `json:"username,omitempty"`
-	Group              *string  `json:"group,omitempty"`
-	AcceptServerRoutes *bool    `json:"accept_server_routes,omitempty"`
-	AutoReconnect      *bool    `json:"auto_reconnect,omitempty"`
-	ApplyDNS           *bool    `json:"apply_dns,omitempty"`
-	CustomInclude      []string `json:"custom_include_routes,omitempty"`
-	CustomExclude      []string `json:"custom_exclude_routes,omitempty"`
-	DNSOverrides       []string `json:"dns_overrides,omitempty"`
-	SOCKS5Enabled      *bool    `json:"socks5_enabled,omitempty"`
-	SOCKS5Listen       *string  `json:"socks5_listen,omitempty"`
-	MTU                *int     `json:"mtu,omitempty"`
-	Password           *string  `json:"password,omitempty"`
+	ATrustCompatibility *ATrustCompatibility `json:"atrust_compatibility,omitempty"`
+	Provider            *Provider            `json:"provider,omitempty"`
+	AuthMethod          *AuthMethod          `json:"auth_method,omitempty"`
+	LoginDomain         *string              `json:"login_domain,omitempty"`
+	Credential          []byte               `json:"credential,omitempty"`
+	Name                *string              `json:"name,omitempty"`
+	ServerURL           *string              `json:"server_url,omitempty"`
+	Username            *string              `json:"username,omitempty"`
+	Group               *string              `json:"group,omitempty"`
+	AcceptServerRoutes  *bool                `json:"accept_server_routes,omitempty"`
+	AutoReconnect       *bool                `json:"auto_reconnect,omitempty"`
+	ApplyDNS            *bool                `json:"apply_dns,omitempty"`
+	CustomInclude       []string             `json:"custom_include_routes,omitempty"`
+	CustomExclude       []string             `json:"custom_exclude_routes,omitempty"`
+	DNSOverrides        []string             `json:"dns_overrides,omitempty"`
+	SOCKS5Enabled       *bool                `json:"socks5_enabled,omitempty"`
+	SOCKS5Listen        *string              `json:"socks5_listen,omitempty"`
+	MTU                 *int                 `json:"mtu,omitempty"`
+	Password            *string              `json:"password,omitempty"`
 }
 
 type SessionInfo struct {
@@ -102,8 +131,8 @@ type SessionInfo struct {
 	MTU           int           `json:"mtu"`
 	SplitInclude  []string      `json:"split_include"`
 	SplitExclude  []string      `json:"split_exclude"`
-	TLSCipher     string        `json:"tls_cipher"`
-	DTLSCipher    string        `json:"dtls_cipher"`
+	TLSCipher     string        `json:"tls_cipher,omitempty"`
+	DTLSCipher    string        `json:"dtls_cipher,omitempty"`
 	Underlay      *UnderlayInfo `json:"underlay,omitempty"`
 }
 
@@ -260,7 +289,7 @@ type OperationRef struct {
 	Operation Operation `json:"operation"`
 }
 
-// ProfileMutationResult represents the two valid PATCH /v2/profiles outcomes:
+// ProfileMutationResult represents the two valid PATCH /v3/profiles outcomes:
 // a completed static update or an asynchronous active-profile transaction.
 type ProfileMutationResult struct {
 	Profile   *Profile
@@ -297,22 +326,36 @@ type LogEntry struct {
 	Message string `json:"message"`
 }
 
+// AuthenticationChallenge contains prompt metadata only. Responses never enter events or storage.
+type AuthenticationChallenge struct {
+	ID           string    `json:"id"`
+	ConnectionID string    `json:"connection_id"`
+	ProfileID    string    `json:"profile_id"`
+	Method       string    `json:"method"`
+	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+type AuthenticationResponse struct {
+	Response string `json:"response"`
+}
+
 type Notify struct {
-	Epoch      string           `json:"epoch"`
-	Revision   uint64           `json:"revision"`
-	Version    string           `json:"version"`
-	Event      string           `json:"event"`
-	Status     *Status          `json:"status,omitempty"`
-	Traffic    *TrafficSnapshot `json:"traffic,omitempty"`
-	Profile    *Profile         `json:"profile,omitempty"`
-	Profiles   []Profile        `json:"profiles,omitempty"`
-	Logs       []LogEntry       `json:"logs,omitempty"`
-	Message    string           `json:"message,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	Connection *ConnectionEvent `json:"connection,omitempty"`
-	Network    *NetworkChange   `json:"network,omitempty"`
-	Operation  *Operation       `json:"operation,omitempty"`
-	Time       string           `json:"time"`
+	Authentication *AuthenticationChallenge `json:"authentication,omitempty"`
+	Epoch          string                   `json:"epoch"`
+	Revision       uint64                   `json:"revision"`
+	Version        string                   `json:"version"`
+	Event          string                   `json:"event"`
+	Status         *Status                  `json:"status,omitempty"`
+	Traffic        *TrafficSnapshot         `json:"traffic,omitempty"`
+	Profile        *Profile                 `json:"profile,omitempty"`
+	Profiles       []Profile                `json:"profiles,omitempty"`
+	Logs           []LogEntry               `json:"logs,omitempty"`
+	Message        string                   `json:"message,omitempty"`
+	Error          string                   `json:"error,omitempty"`
+	Connection     *ConnectionEvent         `json:"connection,omitempty"`
+	Network        *NetworkChange           `json:"network,omitempty"`
+	Operation      *Operation               `json:"operation,omitempty"`
+	Time           string                   `json:"time"`
 }
 
 // UpdateAsset describes one downloadable artifact attached to a release.
@@ -370,6 +413,8 @@ func NewProfile(name string) (Profile, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	return Profile{
 		ID:                 id,
+		Provider:           ProviderAnyConnect,
+		AuthMethod:         AuthPassword,
 		Name:               name,
 		Scope:              ProfileScopeMachine,
 		OwnerID:            "system",
