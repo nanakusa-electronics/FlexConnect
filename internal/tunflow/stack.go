@@ -14,17 +14,17 @@ import (
 
 	"flexconnect/internal/tunio"
 
+	"github.com/metacubex/gvisor/pkg/buffer"
+	"github.com/metacubex/gvisor/pkg/tcpip"
+	"github.com/metacubex/gvisor/pkg/tcpip/adapters/gonet"
+	"github.com/metacubex/gvisor/pkg/tcpip/header"
+	"github.com/metacubex/gvisor/pkg/tcpip/link/channel"
+	"github.com/metacubex/gvisor/pkg/tcpip/network/ipv4"
+	"github.com/metacubex/gvisor/pkg/tcpip/stack"
+	"github.com/metacubex/gvisor/pkg/tcpip/transport/tcp"
+	"github.com/metacubex/gvisor/pkg/tcpip/transport/udp"
+	"github.com/metacubex/gvisor/pkg/waiter"
 	"github.com/tailscale/wireguard-go/tun"
-	"gvisor.dev/gvisor/pkg/buffer"
-	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
-	"gvisor.dev/gvisor/pkg/tcpip/header"
-	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
-	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 type Dialer interface {
@@ -123,31 +123,36 @@ func (s *Stack) acceptTCP(req *tcp.ForwarderRequest) {
 	}()
 }
 
-func (s *Stack) acceptUDP(req *udp.ForwarderRequest) {
+func (s *Stack) acceptUDP(req *udp.ForwarderRequest) bool {
+	defer req.Packet().DecRef()
 	s.mu.Lock()
 	if s.closing {
 		s.mu.Unlock()
-		return
+		return true
 	}
+	// Register before dialing so subsequent datagrams find this endpoint
+	// instead of starting another dial and competing for the same flow.
+	var wq waiter.Queue
+	ep, terr := req.CreateEndpoint(&wq)
+	if terr != nil {
+		s.mu.Unlock()
+		return true
+	}
+	local := gonet.NewUDPConn(&wq, ep)
 	s.flows.Add(1)
 	s.mu.Unlock()
 	go func() {
 		defer s.flows.Done()
+		defer local.Close()
 		ctx, cancel := context.WithTimeout(s.ctx, 15*time.Second)
 		remote, err := s.dialer.DialContext(ctx, "udp", target(req.ID()))
 		cancel()
 		if err != nil {
 			return
 		}
-		var wq waiter.Queue
-		ep, terr := req.CreateEndpoint(&wq)
-		if terr != nil {
-			remote.Close()
-			return
-		}
-		local := gonet.NewUDPConn(s.ip, &wq, ep)
 		s.relayUDP(local, remote)
 	}()
+	return true
 }
 
 func (s *Stack) relay(local, remote net.Conn) {
