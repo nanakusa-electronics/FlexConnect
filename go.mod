@@ -12,6 +12,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/gopacket/gopacket v1.5.0
 	github.com/goreleaser/nfpm/v2 v2.10.0
+	github.com/metacubex/gvisor v0.0.0-20251227095601-261ec1326fe8
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/pion/dtls/v3 v3.1.2
 	github.com/sergeymakinen/go-ico v1.0.0
@@ -25,10 +26,7 @@ require (
 	golang.zx2c4.com/wireguard/windows v0.5.3
 )
 
-require (
-	github.com/BurntSushi/toml v1.5.0 // indirect
-	github.com/metacubex/gvisor v0.0.0-20251227095601-261ec1326fe8 // indirect
-)
+require github.com/BurntSushi/toml v1.5.0 // indirect
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2 // indirect
@@ -79,6 +77,6 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gvisor.dev/gvisor v0.0.0-20230927004350-cbd86285d259
+	gvisor.dev/gvisor v0.0.0-20230927004350-cbd86285d259 // indirect
 	howett.net/plist v1.0.1 // indirect
 )

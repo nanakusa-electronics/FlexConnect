@@ -243,13 +243,13 @@ sudo usermod -aG flexconnect "$USER"
 
 ```bash
 go run ./cmd/dist list
-go run ./cmd/dist build --version 2.0.0 linux/amd64/tgz
-go run ./cmd/dist build --version 2.0.0 linux/amd64/deb
-go run ./cmd/dist build --version 2.0.0 linux/amd64/rpm
-go run ./cmd/dist build --version 2.0.0 windows/amd64/zip
-go run ./cmd/dist build --version 2.0.0 windows/amd64/msi
-go run ./cmd/dist build --version 2.0.0 darwin/amd64/pkg
-go run ./cmd/dist build --version 2.0.0 darwin/arm64/pkg
+go run ./cmd/dist build --version 2.0.1 linux/amd64/tgz
+go run ./cmd/dist build --version 2.0.1 linux/amd64/deb
+go run ./cmd/dist build --version 2.0.1 linux/amd64/rpm
+go run ./cmd/dist build --version 2.0.1 windows/amd64/zip
+go run ./cmd/dist build --version 2.0.1 windows/amd64/msi
+go run ./cmd/dist build --version 2.0.1 darwin/amd64/pkg
+go run ./cmd/dist build --version 2.0.1 darwin/arm64/pkg
 ```
 
 2.0.0 使用上游 GeekTrust SDK，固定合并提交 `5bb65f90b45ab34b28ed79197f67dd263a257ff5`（`github.com/ShanghaitechGeekPie/geektrust`）。构建直接下载上游 Go module，不依赖 fork 替换或本地 workspace。
