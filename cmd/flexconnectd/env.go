@@ -69,10 +69,22 @@ func parseDaemonOptions(args []string, lookup envLookup) (daemonOptions, error) 
 		secretStore: secretStore,
 		startup:     startup,
 	}
+	if v, set, err := envBoolOptional(lookup, "FLEXCONNECT_UNATTENDED_MODE"); err != nil {
+		return daemonOptions{}, err
+	} else if set {
+		opts.unattendedMode = &v
+	}
 	fs := flag.NewFlagSet("flexconnectd", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.StringVar(&opts.socket, "socket", opts.socket, "daemon socket or named pipe path")
 	fs.StringVar(&opts.state, "state", opts.state, "path to state file")
+	fs.BoolFunc("unattended_mode", "override selected profile startup connection (true|false)", func(raw string) error {
+		v, err := strconv.ParseBool(raw)
+		if err == nil {
+			opts.unattendedMode = &v
+		}
+		return err
+	})
 	fs.BoolVar(&opts.verbose, "v", opts.verbose, "enable verbose debug logging")
 	fs.BoolVar(&opts.verbose, "verbose", opts.verbose, "same as -v")
 	if err := fs.Parse(args); err != nil {

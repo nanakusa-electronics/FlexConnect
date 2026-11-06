@@ -61,6 +61,7 @@ type Profile struct {
 	OwnerID             string              `json:"-"`
 	Group               string              `json:"group"`
 	AcceptServerRoutes  bool                `json:"accept_server_routes"`
+	UnattendedMode      *bool               `json:"unattended_mode,omitempty"`
 	AutoReconnect       *bool               `json:"auto_reconnect"`
 	ApplyDNS            *bool               `json:"apply_dns"`
 	CustomInclude       []string            `json:"custom_include_routes"`
@@ -86,6 +87,7 @@ type ProfileCreateRequest struct {
 	Group               string              `json:"group,omitempty"`
 	Scope               ProfileScope        `json:"scope"`
 	AcceptServerRoutes  *bool               `json:"accept_server_routes,omitempty"`
+	UnattendedMode      *bool               `json:"unattended_mode,omitempty"`
 	AutoReconnect       *bool               `json:"auto_reconnect,omitempty"`
 	ApplyDNS            *bool               `json:"apply_dns,omitempty"`
 	CustomInclude       []string            `json:"custom_include_routes,omitempty"`
@@ -107,6 +109,7 @@ type ProfileUpdateRequest struct {
 	Username            *string              `json:"username,omitempty"`
 	Group               *string              `json:"group,omitempty"`
 	AcceptServerRoutes  *bool                `json:"accept_server_routes,omitempty"`
+	UnattendedMode      *bool                `json:"unattended_mode,omitempty"`
 	AutoReconnect       *bool                `json:"auto_reconnect,omitempty"`
 	ApplyDNS            *bool                `json:"apply_dns,omitempty"`
 	CustomInclude       []string             `json:"custom_include_routes,omitempty"`

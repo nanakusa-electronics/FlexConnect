@@ -40,9 +40,19 @@ func TestSchema2MigrationPreservesProfilesAndCredentials(t *testing.T) {
 				t.Fatal(err)
 			}
 			start := func() {
-				service, err := New(store, secrets, newFakeBackend(), router.DefaultPlanner{})
+				backend := newFakeBackend()
+				service, err := New(store, secrets, backend, router.DefaultPlanner{})
 				if err != nil {
 					t.Fatal(err)
+				}
+				if err := service.StartUnattended(context.Background(), nil); err != nil {
+					t.Fatal(err)
+				}
+				backend.mu.Lock()
+				connects := backend.connects
+				backend.mu.Unlock()
+				if connects != 0 {
+					t.Fatal("old configuration unexpectedly enabled unattended mode")
 				}
 				if err := service.Close(context.Background()); err != nil {
 					t.Fatal(err)

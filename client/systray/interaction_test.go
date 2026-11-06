@@ -17,6 +17,29 @@ import (
 // message.
 type fakeFailingClient struct{}
 
+type unattendedClient struct {
+	fakeFailingClient
+	id  string
+	req types.ProfileUpdateRequest
+}
+
+func (c *unattendedClient) UpdateProfile(_ context.Context, id string, req types.ProfileUpdateRequest) (types.ProfileMutationResult, error) {
+	c.id, c.req = id, req
+	return types.ProfileMutationResult{}, nil
+}
+
+func TestUnattendedModeToggleUpdatesSelectedProfile(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		client := &unattendedClient{}
+		menu := &Menu{Client: client, notifier: &recordingNotifier{}, status: &types.Status{SelectedProfileID: "selected"}}
+		menu.init()
+		menu.handleUnattendedModeToggle(enabled)
+		if client.id != "selected" || client.req.UnattendedMode == nil || *client.req.UnattendedMode != enabled {
+			t.Fatalf("update = %q %+v", client.id, client.req)
+		}
+	}
+}
+
 func (fakeFailingClient) Status(context.Context) (*types.Status, error) {
 	return nil, errors.New("status unavailable")
 }

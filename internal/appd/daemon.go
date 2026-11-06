@@ -757,6 +757,9 @@ func (s *Service) updateProfile(id string, req types.ProfileUpdateRequest, apply
 	if req.AcceptServerRoutes != nil {
 		profile.AcceptServerRoutes = *req.AcceptServerRoutes
 	}
+	if req.UnattendedMode != nil {
+		profile.UnattendedMode = req.UnattendedMode
+	}
 	if req.AutoReconnect != nil {
 		profile.AutoReconnect = req.AutoReconnect
 	}

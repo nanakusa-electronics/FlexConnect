@@ -7,6 +7,22 @@ import (
 	"flexconnect/internal/types"
 )
 
+func TestUnattendedModeMenu(t *testing.T) {
+	for _, enabled := range []*bool{nil, types.BoolPtr(false), types.BoolPtr(true)} {
+		profile := types.Profile{ID: "p1", UnattendedMode: enabled}
+		settings := settingsMenuItem(&types.Status{SelectedProfileID: "p1"}, []types.Profile{profile})
+		item := assertHasItem(t, settings.Children, "Connect on Daemon Start")
+		want := types.BoolValue(enabled, false)
+		if item.Disabled || !item.Checkbox || item.Checked != want || item.Value != !want || item.Action != menuActionUnattendedMode {
+			t.Fatalf("menu item = %+v", item)
+		}
+	}
+	item := assertHasItem(t, settingsMenuItem(nil, nil).Children, "Connect on Daemon Start")
+	if !item.Disabled {
+		t.Fatal("startup toggle enabled without a selected profile")
+	}
+}
+
 func TestMenuModelUnavailableHasCoreItems(t *testing.T) {
 	model := buildMenuModel(nil, types.TrafficSnapshot{}, nil, nil)
 

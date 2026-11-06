@@ -299,3 +299,20 @@ The response prompt masks terminal input. For automation, use
 not accepted on the command line and are not saved. Requests expire within one
 minute; submitting a code acknowledges delivery to the provider, while the ongoing
 connection operation reports the final authentication result.
+# 启动后自动连接
+
+为当前选中的 VPN 配置开启 `unattended_mode`，守护进程下次启动时会使用已保存的凭据连接：
+
+```sh
+flexconnect profile update -p corp --unattended_mode true
+```
+
+使用 `--unattended_mode false` 关闭。该选项默认关闭，只对启动时选中的配置生效。
+创建配置时也可指定 `flexconnect profile add --unattended_mode ...`。
+
+守护进程可通过 `flexconnectd --unattended_mode=true` 或
+`--unattended_mode=false` 覆盖本次运行的设置，也可设置环境变量
+`FLEXCONNECT_UNATTENDED_MODE=true|false`；命令行参数优先。
+连接尝试在本地 API 启动后进行，限时两分钟，失败后仍可使用 CLI 操作。
+机器配置通过现有机器控制模式连接；已有环境变量启动连接流程优先执行。
+

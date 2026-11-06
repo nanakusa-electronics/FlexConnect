@@ -948,6 +948,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		loginDomain := fs.String("login-domain", "", "aTrust login domain")
 		keystore := fs.String("keystore", "", "import passkey keystore from a file")
 		compatibilityFile := fs.String("atrust-compatibility-file", "", "load aTrust compatibility settings from JSON")
+		unattended := fs.Bool("unattended_mode", false, "connect this profile when the daemon starts and this profile is selected")
 		scope := fs.String("scope", string(types.ProfileScopeUser), "profile scope: user or machine")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
@@ -963,6 +964,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		if err != nil {
 			return fmt.Errorf("generate profile ID: %w", err)
 		}
+		profile.UnattendedMode = unattended
 		profile.Scope = types.ProfileScope(strings.ToLower(strings.TrimSpace(*scope)))
 		if profile.Scope != types.ProfileScopeUser && profile.Scope != types.ProfileScopeMachine {
 			return errors.New("--scope must be user or machine")
@@ -1042,6 +1044,7 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 		dns := fs.String("dns", "", "comma-separated DNS overrides")
 		mtu := fs.String("mtu", "", "MTU override")
 		accept := fs.String("accept", "", "accept server routes (true|false)")
+		unattended := fs.String("unattended_mode", "", "connect on daemon startup (true|false)")
 		autoReconnect := fs.String("auto-reconnect", "", "reconnect automatically after unexpected disconnect (true|false)")
 		applyDNS := fs.String("apply-dns", "", "apply DNS overrides to system DNS configuration (true|false)")
 		fs.StringVar(autoReconnect, "auto_reconnect", "", "reconnect automatically after unexpected disconnect (true|false)")
@@ -1137,6 +1140,13 @@ func runProfile(ctx context.Context, client *local.Client, args []string) error 
 				return fmt.Errorf("invalid --accept value: %w", err)
 			}
 			req.AcceptServerRoutes = &v
+		}
+		if *unattended != "" {
+			v, err := strconv.ParseBool(*unattended)
+			if err != nil {
+				return fmt.Errorf("invalid --unattended_mode value: %w", err)
+			}
+			req.UnattendedMode = &v
 		}
 		if *autoReconnect != "" {
 			v, err := strconv.ParseBool(*autoReconnect)
@@ -1759,7 +1769,7 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 		"profile add": {
 			Name:        "profile add",
 			Usage:       "flexconnect profile add [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] <name> <server_url> [username]",
-			Description: "Create a user profile by default. Elevated administrators may create machine profiles with --scope machine.",
+			Description: "Use --unattended_mode to connect the selected profile on daemon startup. Create a user profile by default. Elevated administrators may create machine profiles with --scope machine.",
 		},
 		"auth": {
 			Name:        "auth",
@@ -1779,7 +1789,7 @@ func lookupHelpTopic(name string) (helpTopic, bool) {
 		"profile update": {
 			Name:  "profile update",
 			Usage: "flexconnect profile update -p <profile-name> [--provider anyconnect|atrust] [--auth-method password|ecnu_passkey|shanghaitech_passkey] [--atrust-compatibility-file <json>] [--password-file <path> | --password-stdin | --keystore <path>] [--login-domain name] [--include a,b] [--exclude c,d]",
-			Description: "Update profile fields in place. Runtime-relevant changes reconnect an active profile automatically.\n" +
+			Description: "Use --unattended_mode true|false to configure startup connection. Update profile fields in place. Runtime-relevant changes reconnect an active profile automatically.\n" +
 				"Use `socks5=true` to enable the built-in VPN-only SOCKS5 proxy for that profile.",
 		},
 		"route": {

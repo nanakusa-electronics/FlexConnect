@@ -346,6 +346,25 @@ func (m *Menu) handleSocks5Toggle(enabled bool) {
 	m.requestRebuild()
 }
 
+func (m *Menu) handleUnattendedModeToggle(enabled bool) {
+	m.mu.Lock()
+	status := copyStatus(m.status)
+	m.mu.Unlock()
+	if status == nil || status.SelectedProfileID == "" {
+		m.reportError("update unattended mode setting failed", fmt.Errorf("no profile selected"))
+		return
+	}
+	req := types.ProfileUpdateRequest{UnattendedMode: &enabled}
+	ctx, cancel := m.opCtx()
+	defer cancel()
+	if _, err := m.Client.UpdateProfile(ctx, status.SelectedProfileID, req); err != nil {
+		m.reportError("update unattended mode setting failed", err)
+		return
+	}
+	m.refresh(ctx)
+	m.requestRebuild()
+}
+
 func (m *Menu) handleAutoReconnectToggle(enabled bool) {
 	m.mu.Lock()
 	status := copyStatus(m.status)
@@ -480,6 +499,8 @@ func (m *Menu) bindMenuAction(ctx context.Context, item *systraylib.MenuItem, mo
 		onClick(ctx, item, func(ctx context.Context) { m.handleProfileSelection(ctx, model.ProfileID) })
 	case menuActionSocks5:
 		onClick(ctx, item, func(context.Context) { m.handleSocks5Toggle(model.Value) })
+	case menuActionUnattendedMode:
+		onClick(ctx, item, func(context.Context) { m.handleUnattendedModeToggle(model.Value) })
 	case menuActionAutoReconnect:
 		onClick(ctx, item, func(context.Context) { m.handleAutoReconnectToggle(model.Value) })
 	case menuActionApplyDNS:

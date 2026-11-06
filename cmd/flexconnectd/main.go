@@ -57,11 +57,12 @@ func main() {
 }
 
 type daemonOptions struct {
-	socket      string
-	state       string
-	verbose     bool
-	secretStore string
-	startup     *startupConfig
+	socket         string
+	state          string
+	verbose        bool
+	secretStore    string
+	unattendedMode *bool
+	startup        *startupConfig
 }
 
 func runDaemon(ctx context.Context, opts daemonOptions) error {
@@ -162,6 +163,19 @@ func runDaemonReadyWithPowerEvents(ctx context.Context, opts daemonOptions, read
 		}
 	}()
 
+	startupDone := make(chan struct{})
+	startupCtx, cancelStartup := context.WithCancel(ctx)
+	defer func() { cancelStartup(); <-startupDone }()
+	go func() {
+		defer close(startupDone)
+		if opts.startup != nil {
+			return
+		}
+		if err := service.StartUnattended(startupCtx, opts.unattendedMode); err != nil {
+			serverLog.Printf("unattended connection failed: %v", err)
+		}
+	}()
+
 	serving := true
 	for serving {
 		select {
@@ -181,6 +195,8 @@ func runDaemonReadyWithPowerEvents(ctx context.Context, opts daemonOptions, read
 		}
 	}
 
+	cancelStartup()
+	<-startupDone
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {

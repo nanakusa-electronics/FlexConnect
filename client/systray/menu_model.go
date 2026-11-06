@@ -19,6 +19,7 @@ const (
 	menuActionToggle
 	menuActionProfile
 	menuActionSocks5
+	menuActionUnattendedMode
 	menuActionAutoReconnect
 	menuActionApplyDNS
 	menuActionCopyDiagnostics
@@ -242,9 +243,11 @@ func profileMenuItem(status *types.Status, profiles []types.Profile) menuItemMod
 func settingsMenuItem(status *types.Status, profiles []types.Profile) menuItemModel {
 	currentProfile := currentProfileByID(profiles, statusCurrentID(status))
 	socks5Enabled := status != nil && status.SOCKS5Enabled
+	unattendedEnabled := false
 	autoReconnectEnabled := false
 	applyDNSEnabled := true
 	if currentProfile != nil {
+		unattendedEnabled = types.BoolValue(currentProfile.UnattendedMode, false)
 		autoReconnectEnabled = types.BoolValue(currentProfile.AutoReconnect, false)
 		applyDNSEnabled = types.BoolValue(currentProfile.ApplyDNS, true)
 	}
@@ -253,6 +256,7 @@ func settingsMenuItem(status *types.Status, profiles []types.Profile) menuItemMo
 		Title: "Settings",
 		Children: []menuItemModel{
 			{Title: "Enable SOCKS5 Proxy", Disabled: disabled, Checked: socks5Enabled, Checkbox: true, Action: menuActionSocks5, Value: !socks5Enabled},
+			{Title: "Connect on Daemon Start", Disabled: disabled, Checked: unattendedEnabled, Checkbox: true, Action: menuActionUnattendedMode, Value: !unattendedEnabled},
 			{Title: "Auto Reconnect", Disabled: disabled, Checked: autoReconnectEnabled, Checkbox: true, Action: menuActionAutoReconnect, Value: !autoReconnectEnabled},
 			{Title: "Apply DNS", Disabled: disabled, Checked: applyDNSEnabled, Checkbox: true, Action: menuActionApplyDNS, Value: !applyDNSEnabled},
 			{Title: "Copy Diagnostics", Action: menuActionCopyDiagnostics},

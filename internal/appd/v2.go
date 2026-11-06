@@ -350,6 +350,7 @@ func (s *Service) CreateProfileFor(actor Actor, req types.ProfileCreateRequest) 
 	if req.AcceptServerRoutes != nil {
 		profile.AcceptServerRoutes = *req.AcceptServerRoutes
 	}
+	profile.UnattendedMode = req.UnattendedMode
 	profile.AutoReconnect = req.AutoReconnect
 	if profile.AutoReconnect == nil {
 		profile.AutoReconnect = types.BoolPtr(false)
