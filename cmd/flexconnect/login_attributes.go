@@ -10,7 +10,6 @@ import (
 
 	"flexconnect/internal/profileio"
 	"flexconnect/internal/types"
-	"github.com/ShanghaitechGeekPie/geektrust/deployment"
 )
 
 func promptATrustAttributes(ctx context.Context, reader *bufio.Reader, out io.Writer, profile *types.Profile) error {
@@ -156,7 +155,7 @@ func promptATrustCompatibility(ctx context.Context, reader *bufio.Reader, out io
 		return err
 	}
 	if identity {
-		metadata := &deployment.ProcessIdentity{}
+		metadata := &types.ProcessIdentity{}
 		metadata.Name, err = promptRequiredValue(reader, out, "Process name")
 		if err != nil {
 			return err

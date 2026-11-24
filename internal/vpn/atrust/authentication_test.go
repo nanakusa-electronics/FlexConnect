@@ -3,10 +3,11 @@ package atrust
 import (
 	"context"
 	"errors"
-	"flexconnect/internal/vpn"
-	"github.com/ShanghaitechGeekPie/geektrust/auth"
 	"testing"
 	"time"
+
+	"flexconnect/internal/vpn"
+	"github.com/ShanghaitechGeekPie/geektrust/auth"
 )
 
 func TestAuthenticationAdapter(t *testing.T) {
@@ -22,10 +23,10 @@ func TestAuthenticationAdapter(t *testing.T) {
 		}
 		return "123456", ctx.Err()
 	})
-	if _, err := handler(context.Background(), auth.Challenge{Method: "unknown"}); !errors.Is(err, auth.ErrUnsupported) || called || vpn.IsRetryable(err) {
+	if _, err := handler(context.Background(), auth.Challenge{Info: auth.ChallengeInfo{Method: "unknown"}}); !errors.Is(err, auth.ErrUnsupported) || called || vpn.IsRetryable(err) {
 		t.Fatalf("unsupported: %v called=%v", err, called)
 	}
-	answer, err := handler(context.Background(), auth.Challenge{Method: "auth/sms", ExpiresAt: expires})
+	answer, err := handler(context.Background(), auth.Challenge{Info: auth.ChallengeInfo{Method: auth.SMS, Deadline: expires}})
 	if err != nil || answer != "123456" || !called {
 		t.Fatalf("answer not delivered: %v", err)
 	}

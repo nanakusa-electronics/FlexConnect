@@ -1,13 +1,13 @@
 package appd
 
 import (
-	"flexconnect/internal/types"
-	"github.com/ShanghaitechGeekPie/geektrust/deployment"
 	"testing"
+
+	"flexconnect/internal/types"
 )
 
 func TestCompatibilityChangeRequiresReconnect(t *testing.T) {
-	original := types.Profile{ATrustCompatibility: types.ATrustCompatibility{FallbackGateways: []string{"gateway:441"}, ProcessIdentity: &deployment.ProcessIdentity{Name: "app", Platform: "Windows", Path: "app.exe"}}}
+	original := types.Profile{ATrustCompatibility: types.ATrustCompatibility{FallbackGateways: []string{"gateway:441"}, ProcessIdentity: &types.ProcessIdentity{Name: "app", Platform: "Windows", Path: "app.exe"}}}
 	unchanged := cloneProfile(original)
 	if needsReconnectForProfileUpdate(original, unchanged) {
 		t.Fatal("unchanged compatibility requires reconnect")

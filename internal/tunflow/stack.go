@@ -31,7 +31,7 @@ type Dialer interface {
 	DialContext(context.Context, string, string) (net.Conn, error)
 }
 type PacketTransport interface {
-	ExchangePacket(context.Context, []byte) ([]byte, error)
+	ExchangeICMPEcho(context.Context, []byte) ([]byte, error)
 }
 
 type Stack struct {
@@ -80,7 +80,7 @@ func New(parent context.Context, dev tun.Device, dialer Dialer, packets PacketTr
 	s.ip.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
 	s.loops.Add(2)
 	go s.readTUN(mtu)
-	go s.writeTUN()
+	go s.writeTUN(mtu)
 	return s, nil
 }
 
@@ -252,7 +252,7 @@ func (s *Stack) handlePacket(packet []byte) {
 		}
 		return
 	}
-	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(append([]byte(nil), packet...))})
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(packet)})
 	s.link.InjectInbound(ipv4.ProtocolNumber, p)
 	p.DecRef()
 }
@@ -261,7 +261,7 @@ func (s *Stack) exchangeICMP(packet []byte) {
 	defer s.flows.Done()
 	ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
 	defer cancel()
-	reply, err := s.packets.ExchangePacket(ctx, packet)
+	reply, err := s.packets.ExchangeICMPEcho(ctx, packet)
 	if err != nil || len(reply) < header.IPv4MinimumSize || reply[0]>>4 != 4 {
 		return
 	}
@@ -275,28 +275,45 @@ func (s *Stack) exchangeICMP(packet []byte) {
 	}
 }
 
-func (s *Stack) writeTUN() {
+func (s *Stack) writeTUN(mtu int) {
 	defer s.loops.Done()
+	scratch := make([]byte, tunio.PacketOffset+mtu)
+	packets := make([][]byte, 1)
 	for {
 		p := s.link.ReadContext(s.ctx)
 		if p == nil {
 			return
 		}
-		view := p.ToView()
-		packet := append([]byte(nil), view.AsSlice()...)
-		view.Release()
-		p.DecRef()
-		if len(packet) == 0 {
+		size := p.Size()
+		if size == 0 {
+			p.DecRef()
 			continue
 		}
+		length := tunio.PacketOffset + size
+		if length > len(scratch) {
+			scratch = make([]byte, length)
+		}
+		// Native TUN may modify its input. Copy the views straight into the
+		// reusable buffer, leaving room for the platform's packet header.
+		clear(scratch[:tunio.PacketOffset])
+		dst := scratch[tunio.PacketOffset:length]
+		views, offset := p.AsViewList()
+		for view := views.Front(); view != nil; view = view.Next() {
+			data := view.AsSlice()
+			skip := min(len(data), offset)
+			offset -= skip
+			dst = dst[copy(dst, data[skip:]):]
+		}
+		p.DecRef()
+		packets[0] = scratch[:length]
 		s.writeMu.Lock()
-		err := tunio.Write(s.dev, packet)
+		_, err := s.dev.Write(packets, tunio.PacketOffset)
 		s.writeMu.Unlock()
 		if err != nil {
 			s.report(err)
 			return
 		}
-		s.received.Add(uint64(len(packet)))
+		s.received.Add(uint64(size))
 	}
 }
 

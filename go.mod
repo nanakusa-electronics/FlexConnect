@@ -1,12 +1,12 @@
 module flexconnect
 
-go 1.26.2
+go 1.26.8
 
 require (
 	fyne.io/systray v1.12.1
 	github.com/Masterminds/semver/v3 v3.1.1
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/ShanghaitechGeekPie/geektrust v0.2.1-rc1.0.20261005162309-5bb65f90b45a
+	github.com/ShanghaitechGeekPie/geektrust v0.3.1
 	github.com/elastic/go-sysinfo v1.15.4
 	github.com/gen2brain/beeep v0.11.2
 	github.com/godbus/dbus/v5 v5.2.2
@@ -21,12 +21,10 @@ require (
 	github.com/vishvananda/netns v0.0.5
 	github.com/zalando/go-keyring v0.2.8
 	go.uber.org/atomic v1.11.0
-	golang.org/x/sys v0.45.0
-	golang.org/x/term v0.42.0
+	golang.org/x/sys v0.46.0
+	golang.org/x/term v0.44.0
 	golang.zx2c4.com/wireguard/windows v0.5.3
 )
-
-require github.com/BurntSushi/toml v1.5.0 // indirect
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2 // indirect
@@ -70,8 +68,8 @@ require (
 	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
 	github.com/ulikunitz/xz v0.5.10 // indirect
 	github.com/xanzy/ssh-agent v0.3.1 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/net v0.53.0
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/net v0.56.0
 	golang.org/x/time v0.10.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

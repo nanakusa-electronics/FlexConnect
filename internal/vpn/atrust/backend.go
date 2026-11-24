@@ -2,6 +2,7 @@ package atrust
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -40,7 +41,7 @@ type Backend struct {
 	cancel        context.CancelFunc
 	monitor       osnet.Monitor
 	monitorCancel context.CancelFunc
-	protocol      geektrust.Info
+	protocol      geektrust.SessionInfo
 	events        chan vpn.Event
 }
 
@@ -72,6 +73,24 @@ func (s blobStore) Save(ctx context.Context, data []byte) error {
 		return err
 	}
 	return s.secrets.Put(s.ref, base64.StdEncoding.EncodeToString(data))
+}
+
+// Each credential has one cache slot. GeekTrust checks the stored session scope before restoring it.
+type sessionStore struct{ blobStore }
+
+func (s sessionStore) Load(ctx context.Context, _ geektrust.SessionScope) ([]byte, error) {
+	return s.blobStore.Load(ctx)
+}
+
+func (s sessionStore) Save(ctx context.Context, _ geektrust.SessionScope, data []byte) error {
+	return s.blobStore.Save(ctx, data)
+}
+
+func (s sessionStore) Delete(ctx context.Context, _ geektrust.SessionScope) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.secrets.Delete(s.ref)
 }
 
 func (b *Backend) deviceID(ref string) (string, error) {
@@ -109,17 +128,34 @@ func (b *Backend) Connect(ctx context.Context, req vpn.ConnectRequest) (*types.S
 	}
 	var targetRoutes atomic.Pointer[routePolicy]
 	targetRoutes.Store(newRoutePolicy(req.Profile, nil))
+	identity, err := auth.NewPasskey(blobStore{b.secrets, req.Profile.SecretRef})
+	if err != nil {
+		return nil, err
+	}
 	c, err := geektrust.New(geektrust.Options{
-		CheckTarget:           func(ip netip.Addr) error { return targetRoutes.Load().check(ip) },
-		Compatibility:         req.Profile.ATrustCompatibility,
-		ChallengeHandler:      authenticationHandler(req.Authenticate),
-		ControllerURL:         req.Profile.ServerURL,
-		DeviceID:              id,
-		LoginDomain:           req.Profile.LoginDomain,
-		DisableSystemResolver: true,
-		GatewayTrustStore:     &gatewayPinStore{secrets: b.secrets, ref: "profile/" + req.Profile.ID},
-		Authenticator:         &geektrust.PasskeyAuthenticator{Store: blobStore{b.secrets, req.Profile.SecretRef}},
-		SessionStore:          blobStore{b.secrets, req.Profile.SecretRef + "/session"},
+		CheckTarget: func(_ context.Context, target geektrust.Target) error {
+			// GeekTrust checks controller DNS authorization before this hook.
+			// Profile routes restrict application destinations and ICMP traffic.
+			if target.Purpose == geektrust.DNSQueryTarget {
+				return nil
+			}
+			return targetRoutes.Load().check(target.IP)
+		},
+		Compatibility: req.Profile.ATrustCompatibility.GeekTrustOptions(),
+		ControllerURL: req.Profile.ServerURL,
+		DeviceID:      id,
+		Auth: geektrust.AuthOptions{
+			Identity:    identity,
+			OnChallenge: authenticationHandler(req.Authenticate),
+			LoginDomain: req.Profile.LoginDomain,
+		},
+		Network: geektrust.NetworkOptions{GatewayTLS: geektrust.GatewayTLSOptions{
+			Config:   &tls.Config{ServerName: req.Profile.ATrustCompatibility.GatewayServerName},
+			Mode:     geektrust.VerifyCAOrTOFU,
+			PinStore: &gatewayPinStore{secrets: b.secrets, ref: "profile/" + req.Profile.ID},
+		}},
+		DNS:          geektrust.DNSOptions{FallbackLookup: lookupPublicIPv4},
+		SessionStore: sessionStore{blobStore{b.secrets, req.Profile.SecretRef + "/session"}},
 	})
 	if err != nil {
 		return nil, err
@@ -233,7 +269,7 @@ func (b *Backend) Disconnect(ctx context.Context) error {
 	b.mu.Lock()
 	c := b.client
 	flows, cancel := b.flows, b.cancel
-	b.client, b.info, b.manager, b.flows, b.cancel, b.protocol = nil, nil, nil, nil, nil, geektrust.Info{}
+	b.client, b.info, b.manager, b.flows, b.cancel, b.protocol = nil, nil, nil, nil, nil, geektrust.SessionInfo{}
 	b.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -290,12 +326,13 @@ func snapshot(s osnet.UnderlaySnapshot) vpn.NetworkSnapshot {
 	return vpn.NetworkSnapshot{InterfaceName: s.InterfaceName, InterfaceIndex: s.InterfaceIndex, LocalIPv4: s.LocalIPv4.String(), Gateway: s.Gateway.String(), GatewayInterface: s.GatewayInterface, RouteMetric: s.RouteMetric, Generation: s.Generation}
 }
 
-func (b *Backend) startTUN(ctx context.Context, req vpn.ConnectRequest, c *geektrust.Client, result geektrust.Info, info *types.SessionInfo) (osnet.Manager, *tunflow.Stack, string, context.CancelFunc, error) {
+func (b *Backend) startTUN(ctx context.Context, req vpn.ConnectRequest, c *geektrust.Client, result geektrust.SessionInfo, info *types.SessionInfo) (osnet.Manager, *tunflow.Stack, string, context.CancelFunc, error) {
 	underlay, err := osnet.GetUnderlaySnapshot(ctx, "")
 	if err != nil {
 		return nil, nil, "", nil, fmt.Errorf("resolve aTrust physical network: %w", err)
 	}
-	protected, controller, err := protectedRoutes(ctx, req.Profile.ServerURL, req.Profile.SecretRef, b.secrets, result.Gateways)
+	gateways := append(slices.Clone(result.Gateways), info.RemoteAddress)
+	protected, controller, err := protectedRoutes(ctx, req.Profile.ServerURL, req.Profile.SecretRef, b.secrets, gateways)
 	if err != nil {
 		return nil, nil, "", nil, err
 	}
@@ -387,13 +424,12 @@ func protectedRoutes(ctx context.Context, controllerURL, credentialRef string, s
 	urls := append([]string{controllerURL}, gateways...)
 	if encoded, err := secrets.Get(credentialRef); err == nil {
 		if blob, err := base64.StdEncoding.DecodeString(encoded); err == nil {
-			if meta, err := geektrust.InspectPasskey(blob); err == nil {
-				urls = append(urls, meta.Origin)
+			if meta, err := auth.InspectPasskey(blob); err == nil {
+				urls = append(urls, meta.Issuer)
 			}
 		}
 	}
-	// GeekTrust's direct DNS stages must also stay on the physical network.
-	urls = append(urls, "223.5.5.5", "119.29.29.29")
+	urls = append(urls, publicDNSServers...)
 	seen := map[netip.Addr]bool{}
 	protected := make([]netip.Prefix, 0, len(urls))
 	var controller netip.Addr
@@ -476,7 +512,7 @@ func (b *Backend) Traffic() *types.TrafficStats {
 func (b *Backend) ReadServerConfig() map[string]any {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return map[string]any{"provider": "atrust", "gateways": append([]string(nil), b.protocol.Gateways...), "dns": append([]string(nil), b.protocol.DNS...), "resource_count": len(b.protocol.Resources), "implemented_capabilities": b.protocol.Implemented}
+	return map[string]any{"provider": "atrust", "gateways": append([]string(nil), b.protocol.Gateways...), "dns": append([]string(nil), b.protocol.DNS...), "resource_count": len(b.protocol.Resources), "implemented_capabilities": geektrust.ImplementedCapabilities()}
 }
 func (b *Backend) RuntimeDiagnostics() *types.RuntimeDiagnostics {
 	b.mu.Lock()
@@ -502,9 +538,9 @@ func authenticationHandler(handler vpn.AuthenticationHandler) auth.Handler {
 		return nil
 	}
 	return func(ctx context.Context, challenge auth.Challenge) (string, error) {
-		if challenge.Method != "auth/sms" {
-			return "", &auth.UnsupportedError{Method: challenge.Method}
+		if challenge.Info.Method != auth.SMS {
+			return "", &auth.UnsupportedError{Method: string(challenge.Info.Method)}
 		}
-		return handler(ctx, vpn.AuthenticationPrompt{Method: "sms", ExpiresAt: challenge.ExpiresAt})
+		return handler(ctx, vpn.AuthenticationPrompt{Method: string(auth.SMS), ExpiresAt: challenge.Info.Deadline})
 	}
 }

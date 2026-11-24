@@ -171,7 +171,7 @@ Container deployment can be done via GitHub Container Registry when pushing `v*`
 - Linux container images are built and published by `.github/workflows/docker-release.yml` to `ghcr.io`.
 
 ## Code Style & Conventions
-- Use Go 1.26.2 as declared in `go.mod`.
+- Use Go 1.26.8 as declared in `go.mod`.
 - Run `gofmt` on touched Go files; avoid repo-wide formatting churn unless requested.
 - Keep package names lower-case and aligned with their directories.
 - Put command entry points in `cmd/<binary>` and reusable code in `client/` or `internal/`.

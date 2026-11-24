@@ -106,7 +106,7 @@ without changing host routes, compile as the ordinary user and execute in a
 new user/network namespace:
 
 ```bash
-GOTOOLCHAIN=go1.26.2 go test -c -o /tmp/flexconnect-tun.test ./internal/anyconnect/tunnel
+GOTOOLCHAIN=go1.26.8 go test -c -o /tmp/flexconnect-tun.test ./internal/anyconnect/tunnel
 unshare -Urn env FLEXCONNECT_TUN_TEST=1 /tmp/flexconnect-tun.test -test.run '^TestNativeLinuxTUNPacketIO$' -test.timeout=15s
 ```
 

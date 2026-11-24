@@ -10,7 +10,7 @@ import (
 	"flexconnect/internal/profileio"
 	"flexconnect/internal/types"
 	"flexconnect/internal/vpn"
-	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
+	"github.com/ShanghaitechGeekPie/geektrust/auth"
 )
 
 type Actor struct {
@@ -312,14 +312,14 @@ func (s *Service) CreateProfileFor(actor Actor, req types.ProfileCreateRequest) 
 		if len(req.Credential) == 0 || len(req.Credential) > 1<<20 {
 			return types.Profile{}, coded("invalid_profile_secret", "valid passkey credential is required", nil)
 		}
-		info, err := geektrust.InspectPasskey(req.Credential)
+		info, err := auth.InspectPasskey(req.Credential)
 		if err != nil || !passkeyMethodMatches(req.AuthMethod, info.Kind) {
 			return types.Profile{}, coded("invalid_profile_secret", "passkey credential does not match authentication method", nil)
 		}
 		if req.Username == "" {
-			req.Username = info.Username
+			req.Username = info.Subject
 		}
-		if req.Username != info.Username {
+		if req.Username != info.Subject {
 			return types.Profile{}, coded("invalid_profile_secret", "profile username does not match credential", nil)
 		}
 	} else if len(req.Credential) != 0 {

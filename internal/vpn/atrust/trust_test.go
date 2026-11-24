@@ -1,7 +1,6 @@
 package atrust
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -16,31 +15,30 @@ func TestGatewayPinStorePersistsAndRejectsChange(t *testing.T) {
 	first := &gatewayPinStore{secrets: base, ref: "profile-one"}
 	second := &gatewayPinStore{secrets: base, ref: "profile-one"}
 	ctx := context.Background()
-	pin := bytes.Repeat([]byte{0x29}, 32)
-	if err := first.SavePin(ctx, "192.0.2.1:441", pin); err != nil {
-		t.Fatal(err)
+	identity := geektrust.GatewayIdentity{Address: "192.0.2.1:441"}
+	pin, changed := [32]byte{0x29}, [32]byte{0x30}
+	if ok, err := first.CheckOrEnroll(ctx, identity, pin); err != nil || !ok {
+		t.Fatalf("enroll pin: %v, %v", ok, err)
 	}
-	got, err := second.LoadPin(ctx, "192.0.2.1:441")
-	if err != nil || !bytes.Equal(got, pin) {
-		t.Fatalf("reloaded pin mismatch: %v", err)
+	if ok, err := second.CheckOrEnroll(ctx, identity, pin); err != nil || !ok {
+		t.Fatalf("reloaded pin mismatch: %v, %v", ok, err)
 	}
-	if err := second.SavePin(ctx, "192.0.2.1:441", bytes.Repeat([]byte{0x30}, 32)); err == nil {
-		t.Fatal("changed gateway key accepted")
+	if ok, err := second.CheckOrEnroll(ctx, identity, changed); err != nil || ok {
+		t.Fatalf("changed gateway key: %v, %v", ok, err)
 	}
 	other := &gatewayPinStore{secrets: base, ref: "profile-two"}
-	got, err = other.LoadPin(ctx, "192.0.2.1:441")
-	if err != nil || len(got) != 0 {
-		t.Fatalf("pin escaped profile boundary: %v", err)
+	if ok, err := other.CheckOrEnroll(ctx, identity, changed); err != nil || !ok {
+		t.Fatalf("pin escaped profile boundary: %v, %v", ok, err)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	if err := first.SavePin(ctx, "192.0.2.2:441", pin); !errors.Is(err, context.Canceled) {
+	if _, err := first.CheckOrEnroll(ctx, geektrust.GatewayIdentity{Address: "192.0.2.2:441"}, pin); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled save: %v", err)
 	}
 }
 
 func TestFakeIPRecyclesOnlyExpiredInactiveLease(t *testing.T) {
-	m := newDNSMapper(geektrust.Info{}, nil)
+	m := newDNSMapper(geektrust.SessionInfo{}, nil)
 	first, err := m.allocate("first.example.test")
 	if err != nil {
 		t.Fatal(err)

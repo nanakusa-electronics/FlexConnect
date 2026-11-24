@@ -42,7 +42,7 @@ CLI、API 和状态文件使用相同字段。未知字段、非法地址或不�
 | --- | --- | --- |
 | `fallback_app_id` | 空 | 资源没有匹配时使用指定应用 ID，仍交由网关验证授权 |
 | `fallback_gateways` | 空数组 | 控制器没有下发网关时使用，地址必须包含端口，支持 `[IPv6]:port` |
-| `gateway_server_name` | 空 | 指定网关 TLS 证书域名，继续验证证书 |
+| `gateway_server_name` | 空 | 指定网关 TLS 证书域名。网关以 IP 下发而证书只含域名时，填写证书对应的域名 |
 | `missing_gateway_group_fallback` | `false` | 所选组没有地址时使用控制器的完整网关列表；不替换非空分组 |
 | `tcp_to_l3_fallback` | `false` | 流式命令不支持或建立阶段提前关闭时尝试 L3；不覆盖认证/授权拒绝、不可达或取消 |
 | `process_identity` | 省略 | 同时覆盖 TCP 和 L3 进程元数据，必须包含 `name`、`platform`、`path` |

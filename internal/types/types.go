@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"io"
 	"time"
-
-	"github.com/ShanghaitechGeekPie/geektrust/deployment"
 )
 
 type State string
@@ -43,9 +41,6 @@ type RouteSpec struct {
 	Source      string `json:"source"`
 	Enabled     bool   `json:"enabled"`
 }
-
-// ATrustCompatibility shares the protocol library's explicit deployment settings.
-type ATrustCompatibility = deployment.Compatibility
 
 type Profile struct {
 	ATrustCompatibility ATrustCompatibility `json:"atrust_compatibility"`

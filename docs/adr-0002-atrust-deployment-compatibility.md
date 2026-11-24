@@ -10,9 +10,12 @@ option must also work when restoring a saved session.
 
 ## Decision
 
-Add `atrust_compatibility` to Profile and the v3 create/update contracts. Reuse
-GeekTrust's public `deployment.Compatibility` data type and validator. This is
-non-secret protocol configuration; credential references remain separate.
+Add `atrust_compatibility` to Profile and the v3 create/update contracts.
+FlexConnect owns the JSON fields, maps them to GeekTrust's public
+`compatibility.Options`, and uses its validator for the corresponding fields.
+The backend explicitly selects GeekTrust's `Generic` profile to keep these
+settings independent of controller hostnames. Credential references live
+outside this configuration.
 Defaults are empty/false for every controller. An update replaces the complete
 object; `{}` resets it. Unknown fields fail decoding. No migration or automatic
 hostname presets are provided.

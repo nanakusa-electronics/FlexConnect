@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GO_VERSION: "1.26.2"
+  GO_VERSION: "1.26.8"
   GOWORK: "off"
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.26.2" }
+        with: { go-version: "1.26.8" }
       - run: go test ./...
       - run: go vet ./...
       - run: go build ./...

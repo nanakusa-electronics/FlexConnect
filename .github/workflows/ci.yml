@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26.2"
+  GO_VERSION: "1.26.8"
   GOWORK: "off"
 
 jobs:
@@ -61,7 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.26.2" }
+        with: { go-version: "1.26.8" }
       - run: go run ./cmd/dist build --version 2.0.1 linux/amd64/tgz linux/amd64/deb linux/amd64/rpm
       - run: docker build --build-arg VERSION=2.0.1 -t flexconnect:ci .
 
@@ -70,7 +70,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.26.2" }
+        with: { go-version: "1.26.8" }
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: "8.0.x" }
       - shell: pwsh
@@ -91,5 +91,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.26.2" }
+        with: { go-version: "1.26.8" }
       - run: go run ./cmd/dist build --version 2.0.1 darwin/${{ matrix.arch }}/pkg

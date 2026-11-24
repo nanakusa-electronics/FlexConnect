@@ -18,6 +18,29 @@ import (
 
 var fakeDNS = netip.MustParseAddr("198.19.255.254")
 var fakeLocal = netip.MustParseAddr("198.19.255.253")
+var publicDNSServers = []string{"223.5.5.5", "119.29.29.29"}
+
+// Query public resolvers over the underlay when controller DNS is unavailable.
+// Using the system resolver here could loop back into the Fake-IP DNS endpoint.
+func lookupPublicIPv4(ctx context.Context, host string) ([]netip.Addr, error) {
+	var lastErr error
+	for _, server := range publicDNSServers {
+		resolver := net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(server, "53"))
+		}}
+		queryCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		addresses, err := resolver.LookupNetIP(queryCtx, "ip4", strings.TrimSuffix(host, ".")+".")
+		cancel()
+		if err == nil {
+			return addresses, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
 
 type dnsMapper struct {
 	mu      sync.Mutex
@@ -31,7 +54,7 @@ type dnsMapper struct {
 	dialer  vpn.TunnelDialer
 }
 
-func newDNSMapper(info geektrust.Info, dialer vpn.TunnelDialer) *dnsMapper {
+func newDNSMapper(info geektrust.SessionInfo, dialer vpn.TunnelDialer) *dnsMapper {
 	m := &dnsMapper{byName: make(map[string]netip.Addr), byIP: make(map[netip.Addr]string), leases: make(map[netip.Addr]time.Time), active: make(map[netip.Addr]int), dialer: dialer}
 	for _, resource := range info.Resources {
 		name := strings.ToLower(strings.TrimSuffix(resource.Address, "."))

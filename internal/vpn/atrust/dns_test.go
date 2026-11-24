@@ -44,7 +44,7 @@ func dnsIPv4(t *testing.T, answer []byte) netip.Addr {
 	return netip.AddrFrom4(msg.Answers[0].Body.(*dnsmessage.AResource).A)
 }
 func TestDNSPreservesHyphenatedDomain(t *testing.T) {
-	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "data-center.example.test"}, {Address: "10.1.0.1-10.1.0.8"}}}, nil)
+	mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "data-center.example.test"}, {Address: "10.1.0.1-10.1.0.8"}}}, nil)
 	answer, err := mapper.answer(context.Background(), dnsQuestion(t, "data-center.example.test"))
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestDNSPreservesHyphenatedDomain(t *testing.T) {
 	}
 }
 func TestDNSTCPFramingAndConnectionReuse(t *testing.T) {
-	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, nil)
+	mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	dialer := flowDialer{ctx: ctx, dns: mapper}
@@ -110,7 +110,7 @@ func TestDNSAppliesRealAddressRouteChoices(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			upstream := &lookupTunnel{address: "10.1.0.2"}
-			mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
+			mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
 			mapper.policy = newRoutePolicy(tt.profile, tt.server)
 			answer, err := mapper.answer(context.Background(), dnsQuestion(t, "service.example.test"))
 			if err != nil {
@@ -130,7 +130,7 @@ func TestDNSAppliesRealAddressRouteChoices(t *testing.T) {
 	}
 }
 func TestDNSTransientFailureIsNotNXDomain(t *testing.T) {
-	mapper := newDNSMapper(geektrust.Info{}, &lookupTunnel{err: context.DeadlineExceeded})
+	mapper := newDNSMapper(geektrust.SessionInfo{}, &lookupTunnel{err: context.DeadlineExceeded})
 	answer, err := mapper.answer(context.Background(), dnsQuestion(t, "example.test"))
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestDNSTransientFailureIsNotNXDomain(t *testing.T) {
 	}
 }
 func TestDNSWriteDeadlineDoesNotChangeReadDeadline(t *testing.T) {
-	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, nil)
+	mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, nil)
 	conn := newDNSConn(context.Background(), mapper)
 	defer conn.Close()
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second))

@@ -22,7 +22,7 @@ import (
 	"flexconnect/internal/types"
 	"flexconnect/internal/updater"
 	"flexconnect/internal/vpn"
-	geektrust "github.com/ShanghaitechGeekPie/geektrust/client"
+	"github.com/ShanghaitechGeekPie/geektrust/auth"
 )
 
 var (
@@ -795,8 +795,8 @@ func (s *Service) updateProfile(id string, req types.ProfileUpdateRequest, apply
 		password = *req.Password
 	}
 	if len(req.Credential) != 0 {
-		info, inspectErr := geektrust.InspectPasskey(req.Credential)
-		if profile.Provider != types.ProviderATrust || len(req.Credential) > 1<<20 || inspectErr != nil || !passkeyMethodMatches(profile.AuthMethod, info.Kind) || profile.Username != info.Username {
+		info, inspectErr := auth.InspectPasskey(req.Credential)
+		if profile.Provider != types.ProviderATrust || len(req.Credential) > 1<<20 || inspectErr != nil || !passkeyMethodMatches(profile.AuthMethod, info.Kind) || profile.Username != info.Subject {
 			s.mu.Unlock()
 			return types.Profile{}, false, errors.New("invalid passkey credential")
 		}

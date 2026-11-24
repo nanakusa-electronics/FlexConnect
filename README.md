@@ -252,7 +252,7 @@ go run ./cmd/dist build --version 2.0.1 darwin/amd64/pkg
 go run ./cmd/dist build --version 2.0.1 darwin/arm64/pkg
 ```
 
-2.0.0 使用上游 GeekTrust SDK，固定合并提交 `5bb65f90b45ab34b28ed79197f67dd263a257ff5`（`github.com/ShanghaitechGeekPie/geektrust`）。构建直接下载上游 Go module，不依赖 fork 替换或本地 workspace。
+构建需要 Go 1.26.8 或更新版本。aTrust 使用 `go.mod` 中固定的 GeekTrust 上游发行版。
 
 ## 运行与配置
 
@@ -276,7 +276,9 @@ go run ./cmd/dist build --version 2.0.1 darwin/arm64/pkg
 - `release/`：Debian 和 RPM 生命周期脚本
 - `scripts/`：构建、打包、安装和运行脚本
 
-## Credits
+## 致谢
+
+* 感谢上海科技大学 GeekPie 社团和 GeekTrust 贡献者提供 aTrust 协议实现与 Go SDK，供 FlexConnect 处理认证和隧道传输。[GeekTrust](https://github.com/ShanghaitechGeekPie/geektrust)
 * [Tailscale](https://tailscale.com/) - 架构参考与实现参考
 * [sslcon](https://github.com/tlslink/sslcon) - AnyConnect 协议实现参考
 

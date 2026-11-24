@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.26.2-bookworm AS build
+FROM golang:1.26.8-bookworm AS build
 
-ARG VERSION=2.0.0
+ARG VERSION=2.0.3
 
 ENV GOWORK=off
 

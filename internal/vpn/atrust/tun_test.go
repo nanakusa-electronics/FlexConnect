@@ -71,7 +71,7 @@ func TestDNSPacketThroughUserStackPreservesDomain(t *testing.T) {
 		t.Fatal(err)
 	}
 	dev := newFakeTUN()
-	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, nil)
+	mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	flow, err := tunflow.New(ctx, dev, flowDialer{ctx: ctx, dns: mapper}, nil, 1399)
@@ -129,7 +129,7 @@ func (*echoTunnel) LookupContextHost(context.Context, string) ([]string, error) 
 
 func TestUDPFlowRestoresDomainBeforeDial(t *testing.T) {
 	upstream := &echoTunnel{target: make(chan string, 1)}
-	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
+	mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
 	fakeIP, err := mapper.allocate("service.example.test")
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestUDPFlowRestoresDomainBeforeDial(t *testing.T) {
 
 func TestTCPFlowThroughUserStack(t *testing.T) {
 	upstream := &echoTunnel{target: make(chan string, 1)}
-	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
+	mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
 	fakeIP, err := mapper.allocate("service.example.test")
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +292,7 @@ func (d *batchTUN) Write(bufs [][]byte, offset int) (int, error) {
 
 type echoPacket struct{}
 
-func (echoPacket) ExchangePacket(_ context.Context, packet []byte) ([]byte, error) {
+func (echoPacket) ExchangeICMPEcho(_ context.Context, packet []byte) ([]byte, error) {
 	packet[20] = 0
 	return packet, nil
 }
@@ -322,7 +322,7 @@ func TestATrustConsumesEveryNativeTUNSegment(t *testing.T) {
 
 func TestEmptyUDPDatagramThroughUserStack(t *testing.T) {
 	upstream := &echoTunnel{target: make(chan string, 1)}
-	mapper := newDNSMapper(geektrust.Info{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
+	mapper := newDNSMapper(geektrust.SessionInfo{Resources: []geektrust.Resource{{Address: "service.example.test"}}}, upstream)
 	fakeIP, err := mapper.allocate("service.example.test")
 	if err != nil {
 		t.Fatal(err)

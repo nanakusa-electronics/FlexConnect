@@ -1,6 +1,7 @@
 package tunflow
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
+	"github.com/metacubex/gvisor/pkg/buffer"
+	"github.com/metacubex/gvisor/pkg/tcpip/link/channel"
+	"github.com/metacubex/gvisor/pkg/tcpip/stack"
 	"github.com/tailscale/wireguard-go/tun"
 )
 
@@ -114,6 +118,46 @@ func closeTestStack(t *testing.T, s *Stack) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("stack cleanup blocked on a UDP flow")
+	}
+}
+
+func TestTUNWriteHandlesSplitViewsAndChangingPacketSize(t *testing.T) {
+	const mtu = 576
+	ctx, cancel := context.WithCancel(context.Background())
+	dev := newTestTUN()
+	s := &Stack{dev: dev, link: channel.New(2, mtu, ""), ctx: ctx, errs: make(chan error, 1)}
+	s.loops.Add(1)
+	go s.writeTUN(mtu)
+	t.Cleanup(func() {
+		cancel()
+		s.loops.Wait()
+		s.link.Close()
+	})
+
+	header := bytes.Repeat([]byte{0x45}, 20)
+	for _, data := range [][]byte{bytes.Repeat([]byte{0xab}, mtu), {0xcd, 0xef}} {
+		middle := len(data) / 2
+		payload := buffer.MakeWithData(data[:middle])
+		payload.Append(buffer.NewViewWithData(data[middle:]))
+		p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: 64, Payload: payload})
+		copy(p.NetworkHeader().Push(len(header)), header)
+		var packets stack.PacketBufferList
+		packets.PushBack(p)
+		n, err := s.link.WritePackets(packets)
+		p.DecRef()
+		if n != 1 || err != nil {
+			t.Fatalf("queue packet: %d, %v", n, err)
+		}
+		select {
+		case got := <-dev.out:
+			if !bytes.Equal(got, append(bytes.Clone(header), data...)) {
+				t.Fatalf("TUN write did not preserve the header and payload, length = %d", len(got))
+			}
+		case err := <-s.errs:
+			t.Fatal(err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("TUN write timed out")
+		}
 	}
 }
 
